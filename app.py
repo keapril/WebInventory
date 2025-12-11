@@ -52,7 +52,7 @@ def save_log(entry):
     df_log.to_csv(LOG_FILE, index=False)
 
 def save_uploaded_image(uploaded_file, sku):
-    """儲存上傳的圖片並回傳檔名"""
+    """儲存上傳的圖片並回傳檔名 (會覆蓋舊檔)"""
     if uploaded_file is None:
         return None
     
@@ -62,6 +62,7 @@ def save_uploaded_image(uploaded_file, sku):
     new_filename = f"{sku}{file_ext}"
     save_path = os.path.join(IMAGE_DIR, new_filename)
     
+    # wb 模式會直接覆蓋同名檔案
     with open(save_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
     return new_filename
@@ -191,8 +192,10 @@ def process_stock(sku, qty, op_type):
 def page_maintenance():
     st.subheader("品項維護")
     
-    tab_new, tab_edit = st.tabs(["新增商品", "編輯庫存總表"])
+    # 新增第三個分頁：圖片更換專區
+    tab_new, tab_edit, tab_img = st.tabs(["新增商品", "編輯庫存總表", "🖼️ 圖片更換專區"])
     
+    # --- Tab 1: 新增商品 ---
     with tab_new:
         with st.form("new_prod"):
             c1, c2, c3 = st.columns(3)
@@ -207,15 +210,12 @@ def page_maintenance():
                 sku = f"{i_code}-{i_cat}-{i_num}"
                 if i_code and i_name:
                     df = load_data()
-                    
-                    # 處理圖片
                     fname = None
                     if i_file:
                         fname = save_uploaded_image(i_file, sku)
                     
                     if sku in df['SKU'].values:
                         st.warning("SKU 已存在，將更新資料...")
-                        # 若有上傳新圖才更新圖片欄位
                         if fname: 
                             df.loc[df['SKU']==sku, 'ImageFile'] = fname
                         df.loc[df['SKU']==sku, ['Code','Category','Number','Name']] = [i_code,i_cat,i_num,i_name]
@@ -232,16 +232,69 @@ def page_maintenance():
                 else:
                     st.error("錯誤：編碼與品名為必填欄位")
                     
+    # --- Tab 2: 編輯庫存總表 ---
     with tab_edit:
-        st.caption("提示：點擊表格內容可直接修改，修改完畢請記得按「儲存修改」按鈕。")
+        st.caption("提示：點擊表格內容可直接修改文字或數字(無法修改圖片)，修改完畢請記得按「儲存修改」按鈕。")
         df = load_data()
-        # 使用 dynamic 允許增刪列
         edited = st.data_editor(df, num_rows="dynamic", key="main_editor")
         if st.button("儲存修改"):
             save_data(edited)
             st.success("表格資料已更新！")
             time.sleep(1)
             st.rerun()
+
+    # --- Tab 3: 圖片更換專區 (新功能) ---
+    with tab_img:
+        st.subheader("更換現有商品圖片")
+        df_current = load_data()
+        
+        if df_current.empty:
+            st.info("目前沒有任何商品資料。")
+        else:
+            # 1. 選擇要修改的 SKU
+            sku_list = df_current['SKU'].unique().tolist()
+            selected_sku_for_img = st.selectbox("請選擇要更換圖片的商品 SKU", sku_list, key="sku_img_select")
+            
+            if selected_sku_for_img:
+                # 找出該商品的資料列
+                item_row = df_current[df_current['SKU'] == selected_sku_for_img].iloc[0]
+                st.write(f"您選擇了： **{item_row['Name']}**")
+                
+                col_old, col_new = st.columns(2)
+                
+                # 2. 顯示目前的圖片
+                with col_old:
+                    st.write("📍 目前的圖片：")
+                    current_img_name = item_row['ImageFile']
+                    if pd.notna(current_img_name) and str(current_img_name).strip() != "":
+                        current_img_path = os.path.join(IMAGE_DIR, str(current_img_name))
+                        if os.path.exists(current_img_path) and os.path.isfile(current_img_path):
+                            st.image(current_img_path, width=250, caption=current_img_name)
+                        else:
+                            st.warning(f"找不到原始檔案: {current_img_name}")
+                    else:
+                        st.info("此商品目前沒有圖片。")
+
+                # 3. 上傳新圖片
+                with col_new:
+                    st.write("📤 上傳新圖片以替換：")
+                    new_img_file = st.file_uploader("選擇新圖片", type=["jpg", "png", "jpeg"], key="new_img_uploader")
+                    
+                    if new_img_file:
+                        st.image(new_img_file, width=250, caption="新圖片預覽")
+                        
+                        # 4. 確認更換按鈕
+                        if st.button("✅ 確認更換圖片", key="confirm_img_change"):
+                            # 儲存新圖片 (會自動使用 SKU 命名並覆蓋舊檔)
+                            new_filename = save_uploaded_image(new_img_file, selected_sku_for_img)
+                            
+                            # 更新資料庫中的檔名紀錄
+                            df_current.loc[df_current['SKU'] == selected_sku_for_img, 'ImageFile'] = new_filename
+                            save_data(df_current)
+                            
+                            st.success(f"成功！已將 {selected_sku_for_img} 的圖片更新為 {new_filename}")
+                            time.sleep(1.5)
+                            st.rerun() # 重新整理頁面以顯示最新狀態
 
 def page_reports():
     st.subheader("異動紀錄")
