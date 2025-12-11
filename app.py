@@ -96,15 +96,32 @@ def main():
 
 def page_search():
     st.subheader("庫存查詢")
-    search_term = st.text_input("請輸入 SKU 或 品名關鍵字")
     
-    if search_term:
+    # 使用 columns 將輸入框與按鈕排在同一列
+    col1, col2 = st.columns([4, 1])
+    
+    with col1:
+        search_term = st.text_input("請輸入 SKU 或 品名關鍵字", key="search_input")
+    with col2:
+        # 增加一點垂直空間讓按鈕對齊 (或是直接放按鈕)
+        st.write("") # 空行調整版面
+        search_btn = st.button("🔍 顯示全部 / 搜尋", use_container_width=True)
+    
+    # 邏輯：如果有輸入文字 OR 按下按鈕，都執行搜尋
+    if search_term or search_btn:
         df = load_data()
-        mask = df['SKU'].astype(str).str.contains(search_term, case=False, na=False) | \
-               df['Name'].astype(str).str.contains(search_term, case=False, na=False)
-        result = df[mask]
+        
+        # 如果有輸入關鍵字，就進行篩選
+        if search_term:
+            mask = df['SKU'].astype(str).str.contains(search_term, case=False, na=False) | \
+                   df['Name'].astype(str).str.contains(search_term, case=False, na=False)
+            result = df[mask]
+        else:
+            # 如果沒輸入關鍵字但按了按鈕 -> 顯示全部
+            result = df
         
         if not result.empty:
+            st.success(f"共找到 {len(result)} 筆資料")
             for _, row in result.iterrows():
                 with st.container():
                     st.markdown("---")
@@ -123,7 +140,13 @@ def page_search():
                         st.subheader(row['Name'])
                         st.text(f"SKU: {row['SKU']}")
                         st.text(f"分類: {row['Category']}")
-                        st.metric("目前庫存", row['Stock'])
+                        
+                        # 庫存數量顯示 (如果低於安全庫存顯示紅色)
+                        stock = row['Stock']
+                        if stock <= 5:
+                            st.markdown(f"目前庫存: :red[**{stock}**] (庫存偏低)")
+                        else:
+                            st.metric("目前庫存", stock)
         else:
             st.info("查無資料")
 
