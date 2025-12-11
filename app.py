@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(
@@ -23,6 +23,11 @@ if not os.path.exists(IMAGE_DIR):
 
 # --- 3. 核心函數區 ---
 
+def get_taiwan_time():
+    """取得台灣時間 (GMT+8) 字串"""
+    tz = timezone(timedelta(hours=8))
+    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+
 def load_data():
     """讀取庫存資料"""
     if os.path.exists(DATA_FILE):
@@ -30,7 +35,6 @@ def load_data():
             return pd.read_csv(DATA_FILE)
         except:
             pass
-    # 若讀取失敗或檔案不存在，回傳空的 DataFrame
     return pd.DataFrame(columns=["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock"])
 
 def load_log():
@@ -52,17 +56,12 @@ def save_log(entry):
     df_log.to_csv(LOG_FILE, index=False)
 
 def save_uploaded_image(uploaded_file, sku):
-    """儲存上傳的圖片並回傳檔名 (會覆蓋舊檔)"""
+    """儲存上傳的圖片並回傳檔名"""
     if uploaded_file is None:
         return None
-    
-    # 取得副檔名 (例如 .jpg)
     file_ext = os.path.splitext(uploaded_file.name)[1]
-    # 建立新檔名：SKU + 副檔名
     new_filename = f"{sku}{file_ext}"
     save_path = os.path.join(IMAGE_DIR, new_filename)
-    
-    # wb 模式會直接覆蓋同名檔案
     with open(save_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
     return new_filename
@@ -70,13 +69,10 @@ def save_uploaded_image(uploaded_file, sku):
 # --- 4. 主程式介面 ---
 
 def main():
-    # 側邊欄導航 (無須登入)
     with st.sidebar:
         st.title("庫存管理系統")
         st.write("使用者：管理員 (Admin)")
         st.markdown("---")
-        
-        # 中文選單
         page = st.radio("功能選單", [
             "庫存查詢", 
             "入庫作業", 
@@ -85,7 +81,6 @@ def main():
             "異動紀錄"
         ])
 
-    # 根據選擇顯示不同頁面
     if page == "庫存查詢":
         page_search()
     elif page == "入庫作業":
@@ -105,7 +100,6 @@ def page_search():
     
     if search_term:
         df = load_data()
-        # 轉成字串再比對，避免錯誤
         mask = df['SKU'].astype(str).str.contains(search_term, case=False, na=False) | \
                df['Name'].astype(str).str.contains(search_term, case=False, na=False)
         result = df[mask]
@@ -116,12 +110,9 @@ def page_search():
                     st.markdown("---")
                     c1, c2 = st.columns([1, 2])
                     with c1:
-                        # 圖片顯示 (含防呆機制)
                         img_name = row['ImageFile']
                         if pd.notna(img_name) and str(img_name).strip() != "":
                             img_path = os.path.join(IMAGE_DIR, str(img_name))
-                            
-                            # 嚴格檢查：必須是檔案存在才顯示
                             if os.path.exists(img_path) and os.path.isfile(img_path):
                                 st.image(img_path, width=300)
                             else:
@@ -139,21 +130,18 @@ def page_search():
 def page_operation(op_type):
     st.subheader(f"{op_type}作業")
     
-    # 初始化 session state 用於連續掃描
     if "scan_input" not in st.session_state:
         st.session_state.scan_input = ""
 
     c1, c2 = st.columns([1, 3])
     qty = c1.number_input(f"{op_type}數量", min_value=1, value=1)
     
-    # 定義掃描後的動作
     def on_scan():
         sku_code = st.session_state.scan_box
         if sku_code:
             process_stock(sku_code, qty, op_type)
-            st.session_state.scan_box = "" # 清空輸入框以便下一筆
+            st.session_state.scan_box = "" 
 
-    # 掃描輸入框
     st.text_input("請掃描條碼 (掃描後自動執行)", key="scan_box", on_change=on_scan)
 
 def process_stock(sku, qty, op_type):
@@ -167,16 +155,16 @@ def process_stock(sku, qty, op_type):
         
         if op_type == "入庫":
             new_stock = current_stock + qty
-        else: # 出庫
+        else:
             new_stock = current_stock - qty
             
         df.at[idx, 'Stock'] = new_stock
         save_data(df)
         
-        # 寫入紀錄
+        # 使用台灣時間
         log = {
-            "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "User": "Admin", # 無登入模式預設為 Admin
+            "Time": get_taiwan_time(),
+            "User": "Admin",
             "Type": op_type,
             "SKU": sku,
             "Name": name,
@@ -192,10 +180,9 @@ def process_stock(sku, qty, op_type):
 def page_maintenance():
     st.subheader("品項維護")
     
-    # 新增第三個分頁：圖片更換專區
     tab_new, tab_edit, tab_img = st.tabs(["新增商品", "編輯庫存總表", "🖼️ 圖片更換專區"])
     
-    # --- Tab 1: 新增商品 ---
+    # Tab 1: 新增
     with tab_new:
         with st.form("new_prod"):
             c1, c2, c3 = st.columns(3)
@@ -216,8 +203,7 @@ def page_maintenance():
                     
                     if sku in df['SKU'].values:
                         st.warning("SKU 已存在，將更新資料...")
-                        if fname: 
-                            df.loc[df['SKU']==sku, 'ImageFile'] = fname
+                        if fname: df.loc[df['SKU']==sku, 'ImageFile'] = fname
                         df.loc[df['SKU']==sku, ['Code','Category','Number','Name']] = [i_code,i_cat,i_num,i_name]
                     else:
                         new_row = pd.DataFrame([{
@@ -232,9 +218,9 @@ def page_maintenance():
                 else:
                     st.error("錯誤：編碼與品名為必填欄位")
                     
-    # --- Tab 2: 編輯庫存總表 ---
+    # Tab 2: 編輯
     with tab_edit:
-        st.caption("提示：點擊表格內容可直接修改文字或數字(無法修改圖片)，修改完畢請記得按「儲存修改」按鈕。")
+        st.caption("提示：點擊表格內容可直接修改，修改完畢請記得按「儲存修改」。")
         df = load_data()
         edited = st.data_editor(df, num_rows="dynamic", key="main_editor")
         if st.button("儲存修改"):
@@ -243,7 +229,7 @@ def page_maintenance():
             time.sleep(1)
             st.rerun()
 
-    # --- Tab 3: 圖片更換專區 (新功能) ---
+    # Tab 3: 圖片更換
     with tab_img:
         st.subheader("更換現有商品圖片")
         df_current = load_data()
@@ -251,63 +237,50 @@ def page_maintenance():
         if df_current.empty:
             st.info("目前沒有任何商品資料。")
         else:
-            # 1. 選擇要修改的 SKU
             sku_list = df_current['SKU'].unique().tolist()
             selected_sku_for_img = st.selectbox("請選擇要更換圖片的商品 SKU", sku_list, key="sku_img_select")
             
             if selected_sku_for_img:
-                # 找出該商品的資料列
                 item_row = df_current[df_current['SKU'] == selected_sku_for_img].iloc[0]
                 st.write(f"您選擇了： **{item_row['Name']}**")
                 
                 col_old, col_new = st.columns(2)
                 
-                # 2. 顯示目前的圖片
                 with col_old:
                     st.write("📍 目前的圖片：")
                     current_img_name = item_row['ImageFile']
                     if pd.notna(current_img_name) and str(current_img_name).strip() != "":
                         current_img_path = os.path.join(IMAGE_DIR, str(current_img_name))
                         if os.path.exists(current_img_path) and os.path.isfile(current_img_path):
-                            st.image(current_img_path, width=250, caption=current_img_name)
+                            st.image(current_img_path, width=250)
                         else:
                             st.warning(f"找不到原始檔案: {current_img_name}")
                     else:
-                        st.info("此商品目前沒有圖片。")
+                        st.info("無圖片")
 
-                # 3. 上傳新圖片
                 with col_new:
                     st.write("📤 上傳新圖片以替換：")
                     new_img_file = st.file_uploader("選擇新圖片", type=["jpg", "png", "jpeg"], key="new_img_uploader")
                     
                     if new_img_file:
-                        st.image(new_img_file, width=250, caption="新圖片預覽")
-                        
-                        # 4. 確認更換按鈕
                         if st.button("✅ 確認更換圖片", key="confirm_img_change"):
-                            # 儲存新圖片 (會自動使用 SKU 命名並覆蓋舊檔)
                             new_filename = save_uploaded_image(new_img_file, selected_sku_for_img)
-                            
-                            # 更新資料庫中的檔名紀錄
                             df_current.loc[df_current['SKU'] == selected_sku_for_img, 'ImageFile'] = new_filename
                             save_data(df_current)
-                            
-                            st.success(f"成功！已將 {selected_sku_for_img} 的圖片更新為 {new_filename}")
+                            st.success(f"成功更新！")
                             time.sleep(1.5)
-                            st.rerun() # 重新整理頁面以顯示最新狀態
+                            st.rerun()
 
 def page_reports():
-    st.subheader("異動紀錄")
+    st.subheader("異動紀錄 (台灣時間)")
     df_log = load_log()
     
-    # 篩選功能
     filter_sku = st.text_input("篩選 SKU", key="log_sku")
     if filter_sku:
         df_log = df_log[df_log['SKU'].str.contains(filter_sku, case=False, na=False)]
         
     st.dataframe(df_log.sort_values(by="Time", ascending=False))
     
-    # 下載按鈕
     csv = df_log.to_csv(index=False).encode('utf-8-sig')
     st.download_button("下載 CSV 報表", csv, "inventory_log.csv", "text/csv")
 
