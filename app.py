@@ -1,211 +1,370 @@
-# -*- coding: utf-8 -*-
-import streamlit as st
-import pandas as pd
-import io
-import json
-import time
-from PIL import Image
-from datetime import datetime
+import React, { useState, useMemo } from 'react';
+import { Search, Upload, FileText, Package, List, Tag, Layers, Database, AlertCircle, CheckCircle, X } from 'lucide-react';
 
-# Firebase 相關套件
-import firebase_admin
-from firebase_admin import credentials, firestore, storage
+// -----------------------------------------------------------------------------
+// UI Components (Styled for Warm/Exquisite Theme)
+// -----------------------------------------------------------------------------
 
-# --- 1. 系統設定 ---
-st.set_page_config(
-    page_title="庫存管理系統 (雲端版)",
-    page_icon="📦",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+const Card = ({ children, className = "" }) => (
+  <div className={`bg-white rounded-xl shadow-sm border border-stone-100 ${className}`}>
+    {children}
+  </div>
+);
 
-# --- 2. Firebase 初始化 (單例模式) ---
-# 確保只初始化一次，避免 Streamlit Rerun 時報錯
-if not firebase_admin._apps:
-    # 從 Streamlit Secrets 讀取金鑰字串並轉回 JSON 物件
-    key_dict = json.loads(st.secrets["firebase"]["text_key"])
-    cred = credentials.Certificate(key_dict)
+const Button = ({ children, onClick, variant = 'primary', className = "", disabled = false }) => {
+  const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
+  const variants = {
+    primary: "bg-orange-400 hover:bg-orange-500 text-white shadow-orange-100 shadow-md",
+    secondary: "bg-stone-100 hover:bg-stone-200 text-stone-600",
+    outline: "border border-orange-200 text-orange-600 hover:bg-orange-50"
+  };
+  return (
+    <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`} disabled={disabled}>
+      {children}
+    </button>
+  );
+};
+
+const Badge = ({ children }) => (
+  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200">
+    {children}
+  </span>
+);
+
+// -----------------------------------------------------------------------------
+// Helper Functions
+// -----------------------------------------------------------------------------
+
+// Simple CSV Parser
+const parseCSV = (text) => {
+  const lines = text.split('\n').filter(line => line.trim() !== '');
+  if (lines.length < 2) return [];
+
+  // Assuming first row is header, but we map by index based on user requirement
+  // User columns: 產品代碼(0), 產品分類(1), 類別名稱(2), 品名(3), 規格(4) ... based on provided snippet
+  // Snippet Header: 產品代碼,產品分類,類別名稱,品名,規格,條碼編號...
+  
+  const result = [];
+  
+  // Skip header row (index 0) and process data
+  for (let i = 1; i < lines.length; i++) {
+    // Handle CSV split (considering potential quotes, though simple split works for simple data)
+    // For robustness with the snippet provided, simple split is likely enough, 
+    // but regex is safer for quoted fields containing commas.
+    const matches = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g); 
+    // Fallback to simple split if regex fails or for simple csv
+    const columns = matches ? matches.map(m => m.replace(/^"|"$/g, '')) : lines[i].split(',');
+
+    if (columns.length < 5) continue;
+
+    const code = columns[0]?.trim() || '';
     
-    # 初始化 App (需指定 Storage Bucket)
-    # 請將 '您的專案ID.appspot.com' 替換為您 Firebase Storage 的 Bucket 名稱
-    # 通常是 key_dict['project_id'] + '.appspot.com'
-    bucket_name = f"{key_dict['project_id']}.appspot.com"
-    
-    firebase_admin.initialize_app(cred, {
-        'storageBucket': bucket_name
-    })
-
-db = firestore.client()
-bucket = storage.bucket()
-
-# --- 3. 資料庫操作函式 (Firestore) ---
-
-COLLECTION_NAME = "products"  # 與您的 HTML 系統共用同一個集合
-
-def load_data():
-    """從 Firestore 讀取所有資料並轉為 DataFrame"""
-    docs = db.collection(COLLECTION_NAME).stream()
-    data = []
-    for doc in docs:
-        d = doc.to_dict()
-        # 確保欄位對應 (CSV headers -> Firestore fields)
-        data.append({
-            "SKU": doc.id, # 使用文件 ID 作為 SKU (唯一值)
-            "Code": d.get("code", ""),
-            "Category": d.get("categoryName", ""), # HTML版是用 categoryName
-            "Number": d.get("number", ""), # 假設您有這個欄位
-            "Name": d.get("name", ""),
-            "ImageFile": d.get("imageFile", ""), # 存圖片網址或檔名
-            "Stock": d.get("stock", 0),
-            "Location": d.get("location", ""),
-            "SN": d.get("sn", ""),
-            "Spec": d.get("spec", ""),
-            "UDI": d.get("udi", "")
-        })
-    
-    if not data:
-        return pd.DataFrame(columns=["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock", "Location", "SN", "Spec", "UDI"])
-    
-    return pd.DataFrame(data)
-
-def save_data_row(row):
-    """更新單筆資料到 Firestore"""
-    # 將 DataFrame 的 Row 轉為 Dictionary
-    data_dict = {
-        "code": row.get("Code", ""),
-        "categoryName": row.get("Category", ""),
-        "number": row.get("Number", ""),
-        "name": row.get("Name", ""),
-        "imageFile": row.get("ImageFile", ""),
-        "stock": row.get("Stock", 0),
-        "location": row.get("Location", ""),
-        "sn": row.get("SN", ""),
-        "spec": row.get("Spec", ""),
-        "udi": row.get("UDI", ""),
-        "updatedAt": firestore.SERVER_TIMESTAMP
+    // FILTER LOGIC: Filter out "ZZ" or "待" at the start of Product Code
+    if (code.toUpperCase().startsWith('ZZ') || code.startsWith('待')) {
+      continue;
     }
-    # SKU 當作 Document ID
-    db.collection(COLLECTION_NAME).document(str(row["SKU"])).set(data_dict, merge=True)
 
-def upload_image_to_firebase(uploaded_file, sku):
-    """上傳圖片到 Firebase Storage 並回傳公開連結"""
-    if uploaded_file is None:
-        return None
-    
-    # 建立檔案路徑 (例如 images/SKU-timestamp.jpg)
-    file_ext = uploaded_file.name.split('.')[-1]
-    blob_name = f"images/{sku}-{int(time.time())}.{file_ext}"
-    blob = bucket.blob(blob_name)
-    
-    # 上傳
-    blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
-    
-    # 設定為公開讀取 (這需要您在 Firebase Storage Rules 開放讀取權限)
-    blob.make_public()
-    
-    return blob.public_url
+    result.push({
+      id: i, // unique key
+      code: code,
+      categoryCode: columns[1]?.trim() || '',
+      categoryName: columns[2]?.trim() || '',
+      name: columns[3]?.trim() || '',
+      spec: columns[4]?.trim() || '',
+      udi: '' // Placeholder as requested
+    });
+  }
+  return result;
+};
 
-# --- 4. 介面邏輯 ---
+// -----------------------------------------------------------------------------
+// Main Application
+// -----------------------------------------------------------------------------
 
-st.title("☁️ 雲端庫存管理系統 (Firebase)")
+export default function ProductSystem() {
+  const [activeTab, setActiveTab] = useState('search'); // 'search' or 'admin'
+  const [data, setData] = useState([
+    // Pre-loaded sample data based on user snippet (filtered "待" ones)
+    { id: 1, code: '0137NE', categoryCode: '4-04', categoryName: 'Syringes', name: 'Perouse Perouse Syringes 150ml', spec: '', udi: '' },
+    { id: 2, code: '0163NA', categoryCode: '4-03', categoryName: 'High Pressure Tubing', name: 'Perouse HighPressure Line 50cm', spec: '1.8mm', udi: '' },
+    { id: 3, code: '0163ND', categoryCode: '4-03', categoryName: 'High Pressure Tubing', name: 'Perouse HighPressure Line120cm', spec: '', udi: '' },
+    { id: 4, code: '0185NA', categoryCode: '4-02', categoryName: 'Inflation Device', name: 'Perouse Inflation Device 30atm', spec: '', udi: '' },
+  ]);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [uploadText, setUploadText] = useState('');
+  const [notification, setNotification] = useState(null);
 
-# 側邊欄
-st.sidebar.header("功能選單")
-menu = st.sidebar.radio("前往", ["庫存總覽", "新增商品", "圖片管理"])
+  // Search Logic
+  const filteredData = useMemo(() => {
+    if (!searchTerm) return data;
+    const lowerTerm = searchTerm.toLowerCase();
+    return data.filter(item => 
+      item.code.toLowerCase().includes(lowerTerm) ||
+      item.name.toLowerCase().includes(lowerTerm) ||
+      item.categoryName.toLowerCase().includes(lowerTerm) ||
+      item.spec.toLowerCase().includes(lowerTerm)
+    );
+  }, [data, searchTerm]);
 
-if menu == "庫存總覽":
-    st.subheader("📦 目前庫存")
-    df = load_data()
-    
-    # 搜尋
-    search_term = st.text_input("🔍 搜尋 (名稱/代碼/規格)", "")
-    if search_term:
-        df = df[
-            df["Name"].str.contains(search_term, case=False, na=False) |
-            df["Code"].str.contains(search_term, case=False, na=False) |
-            df["Spec"].str.contains(search_term, case=False, na=False)
-        ]
+  // Handle File Upload (Parsing text)
+  const handleImport = () => {
+    try {
+      if (!uploadText) {
+        showNotification('請輸入或貼上 CSV 內容', 'error');
+        return;
+      }
+      const parsed = parseCSV(uploadText);
+      if (parsed.length === 0) {
+        showNotification('無有效資料或格式錯誤 (所有資料可能已被過濾條件排除)', 'error');
+        return;
+      }
+      setData(parsed);
+      showNotification(`成功匯入 ${parsed.length} 筆資料`, 'success');
+      setUploadText('');
+      setActiveTab('search');
+    } catch (e) {
+      showNotification('解析錯誤，請檢查格式', 'error');
+    }
+  };
 
-    # 顯示表格 (可編輯)
-    edited_df = st.data_editor(
-        df,
-        key="inventory_editor",
-        num_rows="dynamic",
-        column_config={
-            "ImageFile": st.column_config.ImageColumn("圖片預覽"),
-            "Stock": st.column_config.NumberColumn("數量", min_value=0, step=1),
-        },
-        use_container_width=True
-    )
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    if st.button("💾 儲存變更"):
-        # 比對差異並上傳 (為了效能，這裡簡單示範全部檢查，實際可只存變更)
-        # 這裡簡化邏輯：逐筆儲存
-        progress_bar = st.progress(0)
-        for i, row in edited_df.iterrows():
-            if not pd.isna(row["SKU"]) and str(row["SKU"]).strip() != "":
-                save_data_row(row)
-            progress_bar.progress((i + 1) / len(edited_df))
-        
-        st.success("✅ 資料已同步至雲端！")
-        time.sleep(1)
-        st.rerun()
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setUploadText(event.target.result);
+    };
+    reader.readAsText(file);
+  };
 
-elif menu == "新增商品":
-    st.subheader("➕ 新增商品")
-    with st.form("add_form"):
-        c1, c2 = st.columns(2)
-        sku = c1.text_input("SKU (唯一編號)*")
-        code = c2.text_input("產品代碼")
-        name = st.text_input("品名*")
-        category = c1.text_input("分類")
-        spec = c2.text_input("規格")
-        stock = st.number_input("初始數量", min_value=0, value=1)
-        
-        uploaded_img = st.file_uploader("商品圖片", type=["png", "jpg", "jpeg"])
-        
-        if st.form_submit_button("新增"):
-            if not sku or not name:
-                st.error("SKU 和 品名 為必填！")
-            else:
-                image_url = ""
-                if uploaded_img:
-                    with st.spinner("圖片上傳中..."):
-                        image_url = upload_image_to_firebase(uploaded_img, sku)
-                
-                new_data = {
-                    "SKU": sku, "Code": code, "Name": name, 
-                    "Category": category, "Spec": spec, 
-                    "Stock": stock, "ImageFile": image_url,
-                    "Number": "", "Location": "", "SN": "", "UDI": ""
-                }
-                save_data_row(new_data)
-                st.success(f"已新增：{name}")
+  const showNotification = (msg, type) => {
+    setNotification({ msg, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
 
-elif menu == "圖片管理":
-    st.subheader("🖼️ 圖片更換")
-    df = load_data()
-    
-    sku_to_edit = st.selectbox("選擇商品", df["SKU"].unique())
-    
-    if sku_to_edit:
-        item = df[df["SKU"] == sku_to_edit].iloc[0]
-        st.write(f"目前商品：**{item['Name']}**")
-        
-        if item["ImageFile"]:
-            st.image(item["ImageFile"], width=200, caption="目前圖片")
-        else:
-            st.info("尚無圖片")
-            
-        new_img = st.file_uploader("上傳新圖片", type=["png", "jpg"])
-        if new_img and st.button("確認更換"):
-            url = upload_image_to_firebase(new_img, sku_to_edit)
-            # 更新資料庫欄位
-            db.collection(COLLECTION_NAME).document(str(sku_to_edit)).update({"imageFile": url})
-            st.success("圖片更新完成！")
-            time.sleep(1)
-            st.rerun()
+  // ---------------------------------------------------------------------------
+  // Views
+  // ---------------------------------------------------------------------------
 
-# 頁尾
-st.markdown("---")
-st.caption("🔒 雲端同步版 | 資料儲存於 Google Cloud Firestore")
+  const SearchView = () => (
+    <div className="space-y-6 animate-fade-in">
+      {/* Search Header */}
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-end md:items-center">
+        <div>
+          <h2 className="text-2xl font-serif text-stone-800 font-bold mb-1">產品查詢</h2>
+          <p className="text-stone-500 text-sm">輸入代碼、品名或規格進行搜尋</p>
+        </div>
+        <div className="relative w-full md:w-96 group">
+          <input
+            type="text"
+            placeholder="搜尋關鍵字..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 bg-white border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 transition-all shadow-sm"
+          />
+          <Search className="w-5 h-5 text-stone-400 absolute left-3 top-3.5 group-focus-within:text-orange-500 transition-colors" />
+        </div>
+      </div>
+
+      {/* Data Table */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-orange-50 border-b border-orange-100">
+                <th className="py-4 px-6 font-semibold text-stone-700 text-sm w-32">產品代碼</th>
+                <th className="py-4 px-6 font-semibold text-stone-700 text-sm w-32">產品分類</th>
+                <th className="py-4 px-6 font-semibold text-stone-700 text-sm w-48">類別名稱</th>
+                <th className="py-4 px-6 font-semibold text-stone-700 text-sm">品名</th>
+                <th className="py-4 px-6 font-semibold text-stone-700 text-sm w-40">規格</th>
+                <th className="py-4 px-6 font-semibold text-stone-700 text-sm w-32">UDI</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {filteredData.length > 0 ? (
+                filteredData.map((item) => (
+                  <tr key={item.id} className="hover:bg-orange-50/50 transition-colors group">
+                    <td className="py-4 px-6 text-stone-800 font-medium font-mono">{item.code}</td>
+                    <td className="py-4 px-6 text-stone-600">{item.categoryCode}</td>
+                    <td className="py-4 px-6">
+                      <Badge>{item.categoryName}</Badge>
+                    </td>
+                    <td className="py-4 px-6 text-stone-800 font-medium">{item.name}</td>
+                    <td className="py-4 px-6 text-stone-600 text-sm">{item.spec || '-'}</td>
+                    <td className="py-4 px-6 text-stone-400 text-xs italic">
+                      {item.udi || '未建立'}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="6" className="py-12 text-center text-stone-400">
+                    <div className="flex flex-col items-center gap-2">
+                      <Package className="w-12 h-12 opacity-20" />
+                      <p>沒有找到符合的產品資料</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="bg-stone-50 px-6 py-3 border-t border-stone-100 text-xs text-stone-500 flex justify-between items-center">
+          <span>共顯示 {filteredData.length} 筆資料</span>
+          <span>資料來源：系統匯入</span>
+        </div>
+      </Card>
+    </div>
+  );
+
+  const AdminView = () => (
+    <div className="max-w-3xl mx-auto space-y-8 animate-fade-in">
+      <div className="text-center mb-8">
+        <h2 className="text-2xl font-serif text-stone-800 font-bold mb-2">資料管理後台</h2>
+        <p className="text-stone-500">上傳 CSV 檔案以更新產品資料庫</p>
+      </div>
+
+      <div className="grid gap-6">
+        <Card className="p-6 md:p-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+              <Upload className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-stone-800">匯入資料</h3>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="border-2 border-dashed border-stone-200 rounded-xl p-8 text-center hover:border-orange-300 hover:bg-orange-50 transition-all cursor-pointer relative">
+              <input 
+                type="file" 
+                accept=".csv,.txt"
+                onChange={handleFileUpload}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <FileText className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+              <p className="text-stone-600 font-medium">點擊選擇檔案 或 拖曳至此</p>
+              <p className="text-xs text-stone-400 mt-1">支援格式：CSV, TXT</p>
+            </div>
+
+            <div className="relative">
+              <div className="absolute top-0 left-0 -mt-2 ml-3 bg-white px-1 text-xs text-stone-400 font-medium">
+                或直接貼上 CSV 內容
+              </div>
+              <textarea
+                value={uploadText}
+                onChange={(e) => setUploadText(e.target.value)}
+                placeholder="產品代碼,產品分類,類別名稱,品名,規格..."
+                className="w-full h-48 p-4 border border-stone-200 rounded-xl focus:ring-2 focus:ring-orange-200 focus:border-orange-400 focus:outline-none font-mono text-sm bg-stone-50"
+              />
+            </div>
+
+            <div className="bg-orange-50 rounded-lg p-4 text-sm text-stone-600 space-y-2">
+              <p className="font-semibold text-orange-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                匯入規則說明：
+              </p>
+              <ul className="list-disc list-inside space-y-1 ml-1 text-stone-600">
+                <li>系統將只讀取前 5 欄資料。</li>
+                <li>欄位順序須為：產品代碼、產品分類、類別名稱、品名、規格。</li>
+                <li>產品代碼若為 <strong>"ZZ"</strong> 或 <strong>"待"</strong> 開頭，將自動過濾不匯入。</li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button onClick={handleImport}>
+                確認更新資料庫
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  return (
+    <div className="min-h-screen bg-[#FDFBF7] text-stone-800 font-sans selection:bg-orange-200">
+      {/* Navbar */}
+      <nav className="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center gap-3">
+              <div className="bg-orange-500 p-2 rounded-lg text-white shadow-md shadow-orange-200">
+                <Database className="w-6 h-6" />
+              </div>
+              <span className="text-xl font-serif font-bold text-stone-800 tracking-tight">
+                產品資料系統
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setActiveTab('search')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                  activeTab === 'search' 
+                    ? 'bg-orange-50 text-orange-700' 
+                    : 'text-stone-500 hover:bg-stone-50'
+                }`}
+              >
+                <Search className="w-4 h-4" />
+                查詢
+              </button>
+              <button
+                onClick={() => setActiveTab('admin')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                  activeTab === 'admin' 
+                    ? 'bg-orange-50 text-orange-700' 
+                    : 'text-stone-500 hover:bg-stone-50'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                後台管理
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === 'search' ? <SearchView /> : <AdminView />}
+      </main>
+
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`fixed bottom-6 right-6 px-6 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-slide-up z-50 ${
+          notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-500 text-white'
+        }`}>
+          {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <X className="w-5 h-5" />}
+          <span className="font-medium">{notification.msg}</span>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="max-w-7xl mx-auto px-4 py-6 text-center text-stone-400 text-sm">
+        &copy; 2025 Product Data System. Designed for Efficiency.
+      </footer>
+      
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.4s ease-out forwards;
+        }
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up {
+          animation: slide-up 0.3s ease-out forwards;
+        }
+      `}</style>
+    </div>
+  );
+}
