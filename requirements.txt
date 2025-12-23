@@ -1,3 +1,4 @@
+firebase-admin
 streamlit
 pandas
 Pillow
