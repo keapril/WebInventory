@@ -1,311 +1,211 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import os
+import io
+import json
 import time
-from datetime import datetime, timedelta, timezone
+from PIL import Image
+from datetime import datetime
 
-# --- 1. 網頁基礎設定 ---
+# Firebase 相關套件
+import firebase_admin
+from firebase_admin import credentials, firestore, storage
+
+# --- 1. 系統設定 ---
 st.set_page_config(
-    page_title="庫存管理系統",
+    page_title="庫存管理系統 (雲端版)",
+    page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. 常數與路徑設定 ---
-DATA_FILE = "inventory_data.csv"
-LOG_FILE = "transaction_log.csv"
-IMAGE_DIR = "images"
+# --- 2. Firebase 初始化 (單例模式) ---
+# 確保只初始化一次，避免 Streamlit Rerun 時報錯
+if not firebase_admin._apps:
+    # 從 Streamlit Secrets 讀取金鑰字串並轉回 JSON 物件
+    key_dict = json.loads(st.secrets["firebase"]["text_key"])
+    cred = credentials.Certificate(key_dict)
+    
+    # 初始化 App (需指定 Storage Bucket)
+    # 請將 '您的專案ID.appspot.com' 替換為您 Firebase Storage 的 Bucket 名稱
+    # 通常是 key_dict['project_id'] + '.appspot.com'
+    bucket_name = f"{key_dict['project_id']}.appspot.com"
+    
+    firebase_admin.initialize_app(cred, {
+        'storageBucket': bucket_name
+    })
 
-# 確保圖片資料夾存在
-if not os.path.exists(IMAGE_DIR):
-    os.makedirs(IMAGE_DIR)
+db = firestore.client()
+bucket = storage.bucket()
 
-# --- 3. 核心函數區 ---
+# --- 3. 資料庫操作函式 (Firestore) ---
 
-def get_taiwan_time():
-    """取得台灣時間 (GMT+8) 字串"""
-    tz = timezone(timedelta(hours=8))
-    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+COLLECTION_NAME = "products"  # 與您的 HTML 系統共用同一個集合
 
 def load_data():
-    """讀取庫存資料"""
-    if os.path.exists(DATA_FILE):
-        try:
-            return pd.read_csv(DATA_FILE)
-        except:
-            pass
-    return pd.DataFrame(columns=["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock"])
+    """從 Firestore 讀取所有資料並轉為 DataFrame"""
+    docs = db.collection(COLLECTION_NAME).stream()
+    data = []
+    for doc in docs:
+        d = doc.to_dict()
+        # 確保欄位對應 (CSV headers -> Firestore fields)
+        data.append({
+            "SKU": doc.id, # 使用文件 ID 作為 SKU (唯一值)
+            "Code": d.get("code", ""),
+            "Category": d.get("categoryName", ""), # HTML版是用 categoryName
+            "Number": d.get("number", ""), # 假設您有這個欄位
+            "Name": d.get("name", ""),
+            "ImageFile": d.get("imageFile", ""), # 存圖片網址或檔名
+            "Stock": d.get("stock", 0),
+            "Location": d.get("location", ""),
+            "SN": d.get("sn", ""),
+            "Spec": d.get("spec", ""),
+            "UDI": d.get("udi", "")
+        })
+    
+    if not data:
+        return pd.DataFrame(columns=["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock", "Location", "SN", "Spec", "UDI"])
+    
+    return pd.DataFrame(data)
 
-def load_log():
-    """讀取紀錄資料"""
-    if os.path.exists(LOG_FILE):
-        try:
-            return pd.read_csv(LOG_FILE)
-        except:
-            pass
-    return pd.DataFrame(columns=["Time", "User", "Type", "SKU", "Name", "Quantity", "Note"])
+def save_data_row(row):
+    """更新單筆資料到 Firestore"""
+    # 將 DataFrame 的 Row 轉為 Dictionary
+    data_dict = {
+        "code": row.get("Code", ""),
+        "categoryName": row.get("Category", ""),
+        "number": row.get("Number", ""),
+        "name": row.get("Name", ""),
+        "imageFile": row.get("ImageFile", ""),
+        "stock": row.get("Stock", 0),
+        "location": row.get("Location", ""),
+        "sn": row.get("SN", ""),
+        "spec": row.get("Spec", ""),
+        "udi": row.get("UDI", ""),
+        "updatedAt": firestore.SERVER_TIMESTAMP
+    }
+    # SKU 當作 Document ID
+    db.collection(COLLECTION_NAME).document(str(row["SKU"])).set(data_dict, merge=True)
 
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
-
-def save_log(entry):
-    df_log = load_log()
-    new_entry = pd.DataFrame([entry])
-    df_log = pd.concat([df_log, new_entry], ignore_index=True)
-    df_log.to_csv(LOG_FILE, index=False)
-
-def save_uploaded_image(uploaded_file, sku):
-    """儲存上傳的圖片並回傳檔名"""
+def upload_image_to_firebase(uploaded_file, sku):
+    """上傳圖片到 Firebase Storage 並回傳公開連結"""
     if uploaded_file is None:
         return None
-    file_ext = os.path.splitext(uploaded_file.name)[1]
-    new_filename = f"{sku}{file_ext}"
-    save_path = os.path.join(IMAGE_DIR, new_filename)
-    with open(save_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    return new_filename
-
-# --- 4. 主程式介面 ---
-
-def main():
-    with st.sidebar:
-        st.title("庫存管理系統")
-        st.write("使用者：管理員 (Admin)")
-        st.markdown("---")
-        page = st.radio("功能選單", [
-            "庫存查詢", 
-            "入庫作業", 
-            "出庫作業", 
-            "品項維護", 
-            "異動紀錄"
-        ])
-
-    if page == "庫存查詢":
-        page_search()
-    elif page == "入庫作業":
-        page_operation("入庫")
-    elif page == "出庫作業":
-        page_operation("出庫")
-    elif page == "品項維護":
-        page_maintenance()
-    elif page == "異動紀錄":
-        page_reports()
-
-# --- 各頁面子程式 ---
-
-def page_search():
-    st.subheader("庫存查詢")
     
-    # 使用 columns 將輸入框與按鈕排在同一列
-    col1, col2 = st.columns([4, 1])
+    # 建立檔案路徑 (例如 images/SKU-timestamp.jpg)
+    file_ext = uploaded_file.name.split('.')[-1]
+    blob_name = f"images/{sku}-{int(time.time())}.{file_ext}"
+    blob = bucket.blob(blob_name)
     
-    with col1:
-        search_term = st.text_input("請輸入 SKU 或 品名關鍵字", key="search_input")
-    with col2:
-        # 增加一點垂直空間讓按鈕對齊 (或是直接放按鈕)
-        st.write("") # 空行調整版面
-        search_btn = st.button("🔍 顯示全部 / 搜尋", use_container_width=True)
+    # 上傳
+    blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
     
-    # 邏輯：如果有輸入文字 OR 按下按鈕，都執行搜尋
-    if search_term or search_btn:
-        df = load_data()
-        
-        # 如果有輸入關鍵字，就進行篩選
-        if search_term:
-            mask = df['SKU'].astype(str).str.contains(search_term, case=False, na=False) | \
-                   df['Name'].astype(str).str.contains(search_term, case=False, na=False)
-            result = df[mask]
-        else:
-            # 如果沒輸入關鍵字但按了按鈕 -> 顯示全部
-            result = df
-        
-        if not result.empty:
-            st.success(f"共找到 {len(result)} 筆資料")
-            for _, row in result.iterrows():
-                with st.container():
-                    st.markdown("---")
-                    c1, c2 = st.columns([1, 2])
-                    with c1:
-                        img_name = row['ImageFile']
-                        if pd.notna(img_name) and str(img_name).strip() != "":
-                            img_path = os.path.join(IMAGE_DIR, str(img_name))
-                            if os.path.exists(img_path) and os.path.isfile(img_path):
-                                st.image(img_path, width=300)
-                            else:
-                                st.warning(f"[!] 找不到圖片檔案: {img_name}")
-                        else:
-                            st.info("未上傳圖片")
-                    with c2:
-                        st.subheader(row['Name'])
-                        st.text(f"SKU: {row['SKU']}")
-                        st.text(f"分類: {row['Category']}")
-                        
-                        # 庫存數量顯示 (如果低於安全庫存顯示紅色)
-                        stock = row['Stock']
-                        if stock <= 5:
-                            st.markdown(f"目前庫存: :red[**{stock}**] (庫存偏低)")
-                        else:
-                            st.metric("目前庫存", stock)
-        else:
-            st.info("查無資料")
-
-def page_operation(op_type):
-    st.subheader(f"{op_type}作業")
+    # 設定為公開讀取 (這需要您在 Firebase Storage Rules 開放讀取權限)
+    blob.make_public()
     
-    if "scan_input" not in st.session_state:
-        st.session_state.scan_input = ""
+    return blob.public_url
 
-    c1, c2 = st.columns([1, 3])
-    qty = c1.number_input(f"{op_type}數量", min_value=1, value=1)
-    
-    def on_scan():
-        sku_code = st.session_state.scan_box
-        if sku_code:
-            process_stock(sku_code, qty, op_type)
-            st.session_state.scan_box = "" 
+# --- 4. 介面邏輯 ---
 
-    st.text_input("請掃描條碼 (掃描後自動執行)", key="scan_box", on_change=on_scan)
+st.title("☁️ 雲端庫存管理系統 (Firebase)")
 
-def process_stock(sku, qty, op_type):
+# 側邊欄
+st.sidebar.header("功能選單")
+menu = st.sidebar.radio("前往", ["庫存總覽", "新增商品", "圖片管理"])
+
+if menu == "庫存總覽":
+    st.subheader("📦 目前庫存")
     df = load_data()
-    match = df[df['SKU'] == sku]
     
-    if not match.empty:
-        idx = match.index[0]
-        current_stock = df.at[idx, 'Stock']
-        name = df.at[idx, 'Name']
-        
-        if op_type == "入庫":
-            new_stock = current_stock + qty
-        else:
-            new_stock = current_stock - qty
-            
-        df.at[idx, 'Stock'] = new_stock
-        save_data(df)
-        
-        # 使用台灣時間
-        log = {
-            "Time": get_taiwan_time(),
-            "User": "Admin",
-            "Type": op_type,
-            "SKU": sku,
-            "Name": name,
-            "Quantity": qty,
-            "Note": "掃碼作業"
-        }
-        save_log(log)
-        
-        st.success(f"[V] {name} {op_type} {qty} 成功！ (庫存變為: {new_stock})")
-    else:
-        st.error(f"[X] 找不到此 SKU: {sku}")
+    # 搜尋
+    search_term = st.text_input("🔍 搜尋 (名稱/代碼/規格)", "")
+    if search_term:
+        df = df[
+            df["Name"].str.contains(search_term, case=False, na=False) |
+            df["Code"].str.contains(search_term, case=False, na=False) |
+            df["Spec"].str.contains(search_term, case=False, na=False)
+        ]
 
-def page_maintenance():
-    st.subheader("品項維護")
+    # 顯示表格 (可編輯)
+    edited_df = st.data_editor(
+        df,
+        key="inventory_editor",
+        num_rows="dynamic",
+        column_config={
+            "ImageFile": st.column_config.ImageColumn("圖片預覽"),
+            "Stock": st.column_config.NumberColumn("數量", min_value=0, step=1),
+        },
+        use_container_width=True
+    )
+
+    if st.button("💾 儲存變更"):
+        # 比對差異並上傳 (為了效能，這裡簡單示範全部檢查，實際可只存變更)
+        # 這裡簡化邏輯：逐筆儲存
+        progress_bar = st.progress(0)
+        for i, row in edited_df.iterrows():
+            if not pd.isna(row["SKU"]) and str(row["SKU"]).strip() != "":
+                save_data_row(row)
+            progress_bar.progress((i + 1) / len(edited_df))
+        
+        st.success("✅ 資料已同步至雲端！")
+        time.sleep(1)
+        st.rerun()
+
+elif menu == "新增商品":
+    st.subheader("➕ 新增商品")
+    with st.form("add_form"):
+        c1, c2 = st.columns(2)
+        sku = c1.text_input("SKU (唯一編號)*")
+        code = c2.text_input("產品代碼")
+        name = st.text_input("品名*")
+        category = c1.text_input("分類")
+        spec = c2.text_input("規格")
+        stock = st.number_input("初始數量", min_value=0, value=1)
+        
+        uploaded_img = st.file_uploader("商品圖片", type=["png", "jpg", "jpeg"])
+        
+        if st.form_submit_button("新增"):
+            if not sku or not name:
+                st.error("SKU 和 品名 為必填！")
+            else:
+                image_url = ""
+                if uploaded_img:
+                    with st.spinner("圖片上傳中..."):
+                        image_url = upload_image_to_firebase(uploaded_img, sku)
+                
+                new_data = {
+                    "SKU": sku, "Code": code, "Name": name, 
+                    "Category": category, "Spec": spec, 
+                    "Stock": stock, "ImageFile": image_url,
+                    "Number": "", "Location": "", "SN": "", "UDI": ""
+                }
+                save_data_row(new_data)
+                st.success(f"已新增：{name}")
+
+elif menu == "圖片管理":
+    st.subheader("🖼️ 圖片更換")
+    df = load_data()
     
-    tab_new, tab_edit, tab_img = st.tabs(["新增商品", "編輯庫存總表", "🖼️ 圖片更換專區"])
+    sku_to_edit = st.selectbox("選擇商品", df["SKU"].unique())
     
-    # Tab 1: 新增
-    with tab_new:
-        with st.form("new_prod"):
-            c1, c2, c3 = st.columns(3)
-            i_code = c1.text_input("編碼 (Code)")
-            i_cat = c2.text_input("分類 (Category)")
-            i_num = c3.text_input("號碼 (Number)")
-            i_name = st.text_input("品名")
-            i_file = st.file_uploader("上傳圖片 (選用)", type=["jpg", "png", "jpeg"])
-            i_stock = st.number_input("初始庫存", 0)
+    if sku_to_edit:
+        item = df[df["SKU"] == sku_to_edit].iloc[0]
+        st.write(f"目前商品：**{item['Name']}**")
+        
+        if item["ImageFile"]:
+            st.image(item["ImageFile"], width=200, caption="目前圖片")
+        else:
+            st.info("尚無圖片")
             
-            if st.form_submit_button("儲存商品"):
-                sku = f"{i_code}-{i_cat}-{i_num}"
-                if i_code and i_name:
-                    df = load_data()
-                    fname = None
-                    if i_file:
-                        fname = save_uploaded_image(i_file, sku)
-                    
-                    if sku in df['SKU'].values:
-                        st.warning("SKU 已存在，將更新資料...")
-                        if fname: df.loc[df['SKU']==sku, 'ImageFile'] = fname
-                        df.loc[df['SKU']==sku, ['Code','Category','Number','Name']] = [i_code,i_cat,i_num,i_name]
-                    else:
-                        new_row = pd.DataFrame([{
-                            "SKU":sku, "Code":i_code, "Category":i_cat, 
-                            "Number":i_num, "Name":i_name, 
-                            "ImageFile":fname, "Stock":i_stock
-                        }])
-                        df = pd.concat([df, new_row], ignore_index=True)
-                    
-                    save_data(df)
-                    st.success(f"已儲存: {sku}")
-                else:
-                    st.error("錯誤：編碼與品名為必填欄位")
-                    
-    # Tab 2: 編輯
-    with tab_edit:
-        st.caption("提示：點擊表格內容可直接修改，修改完畢請記得按「儲存修改」。")
-        df = load_data()
-        edited = st.data_editor(df, num_rows="dynamic", key="main_editor")
-        if st.button("儲存修改"):
-            save_data(edited)
-            st.success("表格資料已更新！")
+        new_img = st.file_uploader("上傳新圖片", type=["png", "jpg"])
+        if new_img and st.button("確認更換"):
+            url = upload_image_to_firebase(new_img, sku_to_edit)
+            # 更新資料庫欄位
+            db.collection(COLLECTION_NAME).document(str(sku_to_edit)).update({"imageFile": url})
+            st.success("圖片更新完成！")
             time.sleep(1)
             st.rerun()
 
-    # Tab 3: 圖片更換
-    with tab_img:
-        st.subheader("更換現有商品圖片")
-        df_current = load_data()
-        
-        if df_current.empty:
-            st.info("目前沒有任何商品資料。")
-        else:
-            sku_list = df_current['SKU'].unique().tolist()
-            selected_sku_for_img = st.selectbox("請選擇要更換圖片的商品 SKU", sku_list, key="sku_img_select")
-            
-            if selected_sku_for_img:
-                item_row = df_current[df_current['SKU'] == selected_sku_for_img].iloc[0]
-                st.write(f"您選擇了： **{item_row['Name']}**")
-                
-                col_old, col_new = st.columns(2)
-                
-                with col_old:
-                    st.write("📍 目前的圖片：")
-                    current_img_name = item_row['ImageFile']
-                    if pd.notna(current_img_name) and str(current_img_name).strip() != "":
-                        current_img_path = os.path.join(IMAGE_DIR, str(current_img_name))
-                        if os.path.exists(current_img_path) and os.path.isfile(current_img_path):
-                            st.image(current_img_path, width=250)
-                        else:
-                            st.warning(f"找不到原始檔案: {current_img_name}")
-                    else:
-                        st.info("無圖片")
-
-                with col_new:
-                    st.write("📤 上傳新圖片以替換：")
-                    new_img_file = st.file_uploader("選擇新圖片", type=["jpg", "png", "jpeg"], key="new_img_uploader")
-                    
-                    if new_img_file:
-                        if st.button("✅ 確認更換圖片", key="confirm_img_change"):
-                            new_filename = save_uploaded_image(new_img_file, selected_sku_for_img)
-                            df_current.loc[df_current['SKU'] == selected_sku_for_img, 'ImageFile'] = new_filename
-                            save_data(df_current)
-                            st.success(f"成功更新！")
-                            time.sleep(1.5)
-                            st.rerun()
-
-def page_reports():
-    st.subheader("異動紀錄 (台灣時間)")
-    df_log = load_log()
-    
-    filter_sku = st.text_input("篩選 SKU", key="log_sku")
-    if filter_sku:
-        df_log = df_log[df_log['SKU'].str.contains(filter_sku, case=False, na=False)]
-        
-    st.dataframe(df_log.sort_values(by="Time", ascending=False))
-    
-    csv = df_log.to_csv(index=False).encode('utf-8-sig')
-    st.download_button("下載 CSV 報表", csv, "inventory_log.csv", "text/csv")
-
-if __name__ == "__main__":
-    main()
+# 頁尾
+st.markdown("---")
+st.caption("🔒 雲端同步版 | 資料儲存於 Google Cloud Firestore")
