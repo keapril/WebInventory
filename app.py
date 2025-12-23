@@ -19,18 +19,57 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. Firebase 初始化 (單例模式) ---
+# --- 2. Firebase 初始化 (增強除錯版) ---
 if not firebase_admin._apps:
-    # 這裡假設您的 secrets 設定正確
     try:
-        key_dict = json.loads(st.secrets["firebase"]["text_key"])
+        # A. 檢查 Secrets 是否存在
+        if "firebase" not in st.secrets:
+            st.error("❌ 錯誤：Streamlit Secrets 中找不到 [firebase] 區塊。請至後台設定。")
+            st.info("提示：格式應為 [firebase] 下一行接 text_key = ...")
+            st.stop()
+
+        if "text_key" not in st.secrets["firebase"]:
+            st.error("❌ 錯誤：在 [firebase] 區塊中找不到 'text_key'。")
+            st.stop()
+
+        # B. 嘗試解析 JSON
+        token_content = st.secrets["firebase"]["text_key"]
+        if not token_content:
+            st.error("❌ 錯誤：'text_key' 的內容是空的。")
+            st.stop()
+            
+        try:
+            key_dict = json.loads(token_content)
+        except json.JSONDecodeError as e:
+            st.error("❌ 錯誤：Secrets 中的 text_key 不是有效的 JSON 格式。")
+            st.warning(f"JSON 解析錯誤位置：{e}")
+            st.code(token_content[:100] + "...", language="text") # 只顯示前100字幫助除錯
+            st.stop()
+
+        # C. 檢查金鑰必要欄位
+        required_keys = ["project_id", "private_key", "client_email"]
+        missing_keys = [k for k in required_keys if k not in key_dict]
+        if missing_keys:
+            st.error(f"❌ 錯誤：金鑰 JSON 缺少必要欄位：{', '.join(missing_keys)}")
+            st.stop()
+
+        # D. 初始化
         cred = credentials.Certificate(key_dict)
-        bucket_name = f"{key_dict['project_id']}.appspot.com"
+        
+        # 自動抓取 project_id
+        project_id = key_dict.get('project_id')
+        bucket_name = f"{project_id}.appspot.com"
+        
         firebase_admin.initialize_app(cred, {
             'storageBucket': bucket_name
         })
+        
+        st.sidebar.success("✅ Firebase 連線成功")
+
     except Exception as e:
-        st.error(f"Firebase 初始化失敗: {e}")
+        st.error(f"❌ Firebase 初始化發生未預期的錯誤：{e}")
+        # 顯示更詳細的錯誤類型
+        st.caption(f"錯誤類型：{type(e).__name__}")
         st.stop()
 
 db = firestore.client()
@@ -41,40 +80,41 @@ COLLECTION_NAME = "products"
 # --- 3. 資料庫操作函式 ---
 
 def load_data_snapshot():
-    """
-    從 Firestore 讀取資料，同時回傳 DataFrame 和原始的所有 ID (Set)
-    用於後續比對刪除
-    """
-    docs = db.collection(COLLECTION_NAME).stream()
-    data = []
-    original_ids = set()
+    """讀取資料與原始 ID"""
+    try:
+        docs = db.collection(COLLECTION_NAME).stream()
+        data = []
+        original_ids = set()
 
-    for doc in docs:
-        d = doc.to_dict()
-        sku = doc.id
-        original_ids.add(sku)
+        for doc in docs:
+            d = doc.to_dict()
+            sku = doc.id
+            original_ids.add(sku)
+            
+            data.append({
+                "SKU": sku, 
+                "Code": d.get("code", ""),
+                "Category": d.get("categoryName", ""),
+                "Number": d.get("number", ""),
+                "Name": d.get("name", ""),
+                "ImageFile": d.get("imageFile", ""),
+                "Stock": d.get("stock", 0),
+                "Location": d.get("location", ""),
+                "SN": d.get("sn", ""),
+                "Spec": d.get("spec", ""),
+                "UDI": d.get("udi", "")
+            })
         
-        data.append({
-            "SKU": sku, 
-            "Code": d.get("code", ""),
-            "Category": d.get("categoryName", ""),
-            "Number": d.get("number", ""),
-            "Name": d.get("name", ""),
-            "ImageFile": d.get("imageFile", ""),
-            "Stock": d.get("stock", 0),
-            "Location": d.get("location", ""),
-            "SN": d.get("sn", ""),
-            "Spec": d.get("spec", ""),
-            "UDI": d.get("udi", "")
-        })
-    
-    if not data:
-        return pd.DataFrame(columns=["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock", "Location", "SN", "Spec", "UDI"]), original_ids
-    
-    return pd.DataFrame(data), original_ids
+        if not data:
+            return pd.DataFrame(columns=["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock", "Location", "SN", "Spec", "UDI"]), original_ids
+        
+        return pd.DataFrame(data), original_ids
+    except Exception as e:
+        st.error(f"讀取資料庫時發生錯誤: {e}")
+        return pd.DataFrame(), set()
 
 def save_data_row(row):
-    """更新單筆資料到 Firestore"""
+    """更新單筆資料"""
     data_dict = {
         "code": row.get("Code", ""),
         "categoryName": row.get("Category", ""),
@@ -88,11 +128,10 @@ def save_data_row(row):
         "udi": row.get("UDI", ""),
         "updatedAt": firestore.SERVER_TIMESTAMP
     }
-    # 使用 SKU 當作 Document ID
     db.collection(COLLECTION_NAME).document(str(row["SKU"])).set(data_dict, merge=True)
 
 def delete_data_row(sku):
-    """從 Firestore 刪除資料"""
+    """刪除資料"""
     db.collection(COLLECTION_NAME).document(str(sku)).delete()
 
 def upload_image_to_firebase(uploaded_file, sku):
@@ -100,18 +139,21 @@ def upload_image_to_firebase(uploaded_file, sku):
     if uploaded_file is None:
         return None
     
-    file_ext = uploaded_file.name.split('.')[-1]
-    blob_name = f"images/{sku}-{int(time.time())}.{file_ext}"
-    blob = bucket.blob(blob_name)
-    blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
-    blob.make_public()
-    return blob.public_url
+    try:
+        file_ext = uploaded_file.name.split('.')[-1]
+        blob_name = f"images/{sku}-{int(time.time())}.{file_ext}"
+        blob = bucket.blob(blob_name)
+        blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
+        blob.make_public()
+        return blob.public_url
+    except Exception as e:
+        st.error(f"圖片上傳失敗: {e}")
+        return None
 
 # --- 4. 介面邏輯 ---
 
 st.title("☁️ 儀器耗材管理系統")
 
-# 初始化 Session State 用於暫存原始 ID
 if 'original_ids' not in st.session_state:
     st.session_state.original_ids = set()
 
@@ -120,67 +162,62 @@ menu = st.sidebar.radio("前往", ["庫存總覽", "新增商品", "圖片管理
 if menu == "庫存總覽":
     st.subheader("📦 目前庫存")
     
-    # 讀取資料
     df, original_ids = load_data_snapshot()
-    # 將原始 ID 存入 session_state 以便儲存時比對
     st.session_state.original_ids = original_ids
 
-    # 搜尋過濾
-    search_term = st.text_input("🔍 搜尋 (名稱/代碼/規格)", "")
-    if search_term:
-        df = df[
-            df["Name"].str.contains(search_term, case=False, na=False) |
-            df["Code"].str.contains(search_term, case=False, na=False) |
-            df["Spec"].str.contains(search_term, case=False, na=False)
-        ]
+    if not df.empty:
+        search_term = st.text_input("🔍 搜尋 (名稱/代碼/規格)", "")
+        if search_term:
+            df = df[
+                df["Name"].str.contains(search_term, case=False, na=False) |
+                df["Code"].str.contains(search_term, case=False, na=False) |
+                df["Spec"].str.contains(search_term, case=False, na=False)
+            ]
 
-    # 顯示可編輯表格
-    edited_df = st.data_editor(
-        df,
-        key="inventory_editor",
-        num_rows="dynamic",
-        column_config={
-            # 重要修正：鎖定 SKU 欄位，避免使用者修改導致資料重複
-            "SKU": st.column_config.TextColumn("SKU (不可改)", disabled=True),
-            "ImageFile": st.column_config.ImageColumn("圖片預覽"),
-            "Stock": st.column_config.NumberColumn("數量", min_value=0, step=1),
-        },
-        use_container_width=True
-    )
+        edited_df = st.data_editor(
+            df,
+            key="inventory_editor",
+            num_rows="dynamic",
+            column_config={
+                "SKU": st.column_config.TextColumn("SKU (不可改)", disabled=True),
+                "ImageFile": st.column_config.ImageColumn("圖片預覽"),
+                "Stock": st.column_config.NumberColumn("數量", min_value=0, step=1),
+            },
+            use_container_width=True
+        )
 
-    if st.button("💾 儲存變更"):
-        try:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            # 1. 處理資料更新與新增
-            total_rows = len(edited_df)
-            current_skus = set()
-            
-            for i, row in edited_df.iterrows():
-                if not pd.isna(row["SKU"]) and str(row["SKU"]).strip() != "":
-                    sku_str = str(row["SKU"])
-                    current_skus.add(sku_str)
-                    save_data_row(row)
+        if st.button("💾 儲存變更"):
+            try:
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
-                if total_rows > 0:
-                    progress_bar.progress((i + 1) / total_rows)
-            
-            # 2. 處理資料刪除 (重要修正)
-            # 找出「原始有」但「現在沒有」的 SKU
-            deleted_skus = st.session_state.original_ids - current_skus
-            
-            if deleted_skus:
-                status_text.text(f"正在刪除 {len(deleted_skus)} 筆資料...")
-                for sku in deleted_skus:
-                    delete_data_row(sku)
-            
-            st.success(f"✅ 同步完成！更新/新增 {len(edited_df)} 筆，刪除 {len(deleted_skus)} 筆。")
-            time.sleep(1.5)
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"儲存過程發生錯誤: {e}")
+                total_rows = len(edited_df)
+                current_skus = set()
+                
+                for i, row in edited_df.iterrows():
+                    if not pd.isna(row["SKU"]) and str(row["SKU"]).strip() != "":
+                        sku_str = str(row["SKU"])
+                        current_skus.add(sku_str)
+                        save_data_row(row)
+                    
+                    if total_rows > 0:
+                        progress_bar.progress((i + 1) / total_rows)
+                
+                deleted_skus = st.session_state.original_ids - current_skus
+                
+                if deleted_skus:
+                    status_text.text(f"正在刪除 {len(deleted_skus)} 筆資料...")
+                    for sku in deleted_skus:
+                        delete_data_row(sku)
+                
+                st.success(f"✅ 同步完成！更新/新增 {len(edited_df)} 筆，刪除 {len(deleted_skus)} 筆。")
+                time.sleep(1.5)
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"儲存過程發生錯誤: {e}")
+    else:
+        st.info("目前沒有資料，請至「新增商品」頁面新增。")
 
 elif menu == "新增商品":
     st.subheader("➕ 新增商品")
@@ -196,53 +233,57 @@ elif menu == "新增商品":
         uploaded_img = st.file_uploader("商品圖片", type=["png", "jpg", "jpeg"])
         
         if st.form_submit_button("新增"):
-            # 檢查 SKU 是否已存在 (簡單防呆)
-            doc_ref = db.collection(COLLECTION_NAME).document(sku)
-            if doc_ref.get().exists:
-                st.error(f"錯誤：SKU '{sku}' 已存在，請使用其他編號。")
-            elif not sku or not name:
+            if not sku or not name:
                 st.error("SKU 和 品名 為必填！")
             else:
-                image_url = ""
-                if uploaded_img:
-                    with st.spinner("圖片上傳中..."):
-                        image_url = upload_image_to_firebase(uploaded_img, sku)
-                
-                new_data = {
-                    "SKU": sku, "Code": code, "Name": name, 
-                    "Category": category, "Spec": spec, 
-                    "Stock": stock, "ImageFile": image_url,
-                    "Number": "", "Location": "", "SN": "", "UDI": ""
-                }
-                save_data_row(new_data)
-                st.success(f"已新增：{name}")
-                time.sleep(1)
-                st.rerun()
+                # 檢查是否存在
+                doc_ref = db.collection(COLLECTION_NAME).document(sku)
+                if doc_ref.get().exists:
+                    st.error(f"錯誤：SKU '{sku}' 已存在。")
+                else:
+                    image_url = ""
+                    if uploaded_img:
+                        with st.spinner("圖片上傳中..."):
+                            image_url = upload_image_to_firebase(uploaded_img, sku)
+                    
+                    new_data = {
+                        "SKU": sku, "Code": code, "Name": name, 
+                        "Category": category, "Spec": spec, 
+                        "Stock": stock, "ImageFile": image_url,
+                        "Number": "", "Location": "", "SN": "", "UDI": ""
+                    }
+                    save_data_row(new_data)
+                    st.success(f"已新增：{name}")
+                    time.sleep(1)
+                    st.rerun()
 
 elif menu == "圖片管理":
     st.subheader("🖼️ 圖片更換")
-    df, _ = load_data_snapshot() # 重用函式
+    df, _ = load_data_snapshot()
     
-    sku_to_edit = st.selectbox("選擇商品", df["SKU"].unique())
-    
-    if sku_to_edit:
-        item = df[df["SKU"] == sku_to_edit].iloc[0]
-        st.write(f"目前商品：**{item['Name']}** ({item['SKU']})")
+    if not df.empty:
+        sku_to_edit = st.selectbox("選擇商品", df["SKU"].unique())
         
-        if item["ImageFile"]:
-            st.image(item["ImageFile"], width=200, caption="目前圖片")
-        else:
-            st.info("尚無圖片")
+        if sku_to_edit:
+            item = df[df["SKU"] == sku_to_edit].iloc[0]
+            st.write(f"目前商品：**{item['Name']}** ({item['SKU']})")
             
-        new_img = st.file_uploader("上傳新圖片", type=["png", "jpg"])
-        if new_img and st.button("確認更換"):
-            with st.spinner("上傳中..."):
-                url = upload_image_to_firebase(new_img, sku_to_edit)
-                db.collection(COLLECTION_NAME).document(str(sku_to_edit)).update({"imageFile": url})
-            
-            st.success("圖片更新完成！")
-            time.sleep(1)
-            st.rerun()
+            if item["ImageFile"]:
+                st.image(item["ImageFile"], width=200, caption="目前圖片")
+            else:
+                st.info("尚無圖片")
+                
+            new_img = st.file_uploader("上傳新圖片", type=["png", "jpg"])
+            if new_img and st.button("確認更換"):
+                with st.spinner("上傳中..."):
+                    url = upload_image_to_firebase(new_img, sku_to_edit)
+                    if url:
+                        db.collection(COLLECTION_NAME).document(str(sku_to_edit)).update({"imageFile": url})
+                        st.success("圖片更新完成！")
+                        time.sleep(1)
+                        st.rerun()
+    else:
+        st.info("無資料可編輯。")
 
 # 頁尾
 st.markdown("---")
