@@ -19,39 +19,38 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. Firebase 初始化 (增強除錯版) ---
+# --- 2. Firebase 初始化 (超級容錯版) ---
 if not firebase_admin._apps:
     try:
         # A. 檢查 Secrets 是否存在
         if "firebase" not in st.secrets:
-            st.error("❌ 錯誤：Streamlit Secrets 中找不到 [firebase] 區塊。請至後台設定。")
-            st.info("提示：格式應為 [firebase] 下一行接 text_key = ...")
+            st.error("❌ 錯誤：Streamlit Secrets 中找不到 [firebase] 區塊。")
             st.stop()
 
         if "text_key" not in st.secrets["firebase"]:
             st.error("❌ 錯誤：在 [firebase] 區塊中找不到 'text_key'。")
             st.stop()
 
-        # B. 嘗試解析 JSON
+        # B. 嘗試解析 JSON (加入 strict=False 以容許換行符號)
         token_content = st.secrets["firebase"]["text_key"]
-        if not token_content:
-            st.error("❌ 錯誤：'text_key' 的內容是空的。")
-            st.stop()
-            
+        
         try:
-            key_dict = json.loads(token_content)
+            # 關鍵修正：strict=False 允許字串內包含控制字元(如換行)
+            key_dict = json.loads(token_content, strict=False)
         except json.JSONDecodeError as e:
-            st.error("❌ 錯誤：Secrets 中的 text_key 不是有效的 JSON 格式。")
-            st.warning(f"JSON 解析錯誤位置：{e}")
-            st.code(token_content[:100] + "...", language="text") # 只顯示前100字幫助除錯
+            # 如果還是失敗，顯示更具體的引導
+            st.error("❌ JSON 解析嚴重失敗。")
+            st.warning(f"詳細錯誤：{e}")
+            st.info("💡 診斷：您的 'private_key' 欄位可能被斷行了。請嘗試重新複製 JSON，並確保貼上時沒有被編輯器自動格式化。")
+            st.code(token_content[:500], language="json") # 顯示前段內容供檢查
             st.stop()
 
-        # C. 檢查金鑰必要欄位
-        required_keys = ["project_id", "private_key", "client_email"]
-        missing_keys = [k for k in required_keys if k not in key_dict]
-        if missing_keys:
-            st.error(f"❌ 錯誤：金鑰 JSON 缺少必要欄位：{', '.join(missing_keys)}")
-            st.stop()
+        # C. 檢查並修復 private_key 格式 (重要)
+        # 有時候 strict=False 讀進來後，private_key 裡面的 \n 會變成真的換行，
+        # 但 Firebase Admin 有時候需要它是 \n 字串，或是乾淨的 PEM 格式。
+        if "private_key" in key_dict:
+            # 確保 private_key 正確處理換行
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
 
         # D. 初始化
         cred = credentials.Certificate(key_dict)
@@ -68,7 +67,6 @@ if not firebase_admin._apps:
 
     except Exception as e:
         st.error(f"❌ Firebase 初始化發生未預期的錯誤：{e}")
-        # 顯示更詳細的錯誤類型
         st.caption(f"錯誤類型：{type(e).__name__}")
         st.stop()
 
