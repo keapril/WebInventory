@@ -13,7 +13,7 @@ from firebase_admin import credentials, firestore, storage
 
 # --- 1. 系統設定 ---
 st.set_page_config(
-    page_title="庫存管理系統 (修正版)",
+    page_title="儀器耗材管理系統",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -109,7 +109,7 @@ def upload_image_to_firebase(uploaded_file, sku):
 
 # --- 4. 介面邏輯 ---
 
-st.title("☁️ 雲端庫存管理系統 (修正版)")
+st.title("☁️ 儀器耗材管理系統")
 
 # 初始化 Session State 用於暫存原始 ID
 if 'original_ids' not in st.session_state:
@@ -243,3 +243,7 @@ elif menu == "圖片管理":
             st.success("圖片更新完成！")
             time.sleep(1)
             st.rerun()
+
+# 頁尾
+st.markdown("---")
+st.caption("🔒 雲端同步版 | 資料儲存於 Google Cloud Firestore")
