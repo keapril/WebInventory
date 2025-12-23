@@ -254,15 +254,22 @@ def save_data_row(row_data):
     if pd.isna(ws): ws = ""
     if pd.isna(we): we = ""
 
+    # 確保數值型別正確
+    stock_val = row_data.get("Stock", 0)
+    try:
+        stock_val = int(stock_val)
+    except:
+        stock_val = 0
+
     data_dict = {
-        "code": row_data.get("Code", ""),
-        "categoryName": row_data.get("Category", ""),
-        "number": row_data.get("Number", ""),
-        "name": row_data.get("Name", ""),
-        "imageFile": row_data.get("ImageFile", ""),
-        "stock": int(row_data.get("Stock", 0)),
-        "location": row_data.get("Location", ""),
-        "sn": row_data.get("SN", ""),
+        "code": str(row_data.get("Code", "")),
+        "categoryName": str(row_data.get("Category", "")),
+        "number": str(row_data.get("Number", "")),
+        "name": str(row_data.get("Name", "")),
+        "imageFile": str(row_data.get("ImageFile", "")),
+        "stock": stock_val,
+        "location": str(row_data.get("Location", "")),
+        "sn": str(row_data.get("SN", "")),
         "warrantyStart": ws,
         "warrantyEnd": we,
         "updatedAt": firestore.SERVER_TIMESTAMP
@@ -398,7 +405,7 @@ def main():
         ], label_visibility="collapsed")
         
         st.markdown("---")
-        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.0</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.1 (CSV Import)</div>", unsafe_allow_html=True)
 
     # 頁面路由
     if page == "總覽與查詢":
@@ -588,7 +595,7 @@ def process_stock(sku, qty, op_type):
 def page_maintenance():
     st.markdown("### 資料維護")
     
-    tab1, tab2, tab3 = st.tabs(["新增項目", "編輯表格", "更換圖片"])
+    tab1, tab2, tab3, tab4 = st.tabs(["新增項目", "編輯表格", "更換圖片", "批次匯入(CSV)"])
     
     # === Tab 1: 新增 ===
     with tab1:
@@ -722,6 +729,66 @@ def page_maintenance():
                             st.success("圖片更新成功")
                             time.sleep(1)
                             st.rerun()
+                            
+    # === Tab 4: CSV Import ===
+    with tab4:
+        st.markdown("<div class='form-section'>", unsafe_allow_html=True)
+        st.markdown("<div class='form-title'>批次匯入庫存資料</div>", unsafe_allow_html=True)
+        st.info("📢 系統升級為雲端版後，不會自動讀取本機檔案。請在此上傳您原本的 `inventory_data.csv` 進行初始化。")
+        
+        uploaded_csv = st.file_uploader("上傳 CSV 檔", type=["csv"])
+        
+        if uploaded_csv:
+            try:
+                # 嘗試讀取 (自動偵測編碼)
+                try:
+                    df_import = pd.read_csv(uploaded_csv, encoding='utf-8')
+                except:
+                    uploaded_csv.seek(0)
+                    df_import = pd.read_csv(uploaded_csv, encoding='big5') # 台灣常用的 Excel 編碼
+                
+                st.write(f"預覽資料 (共 {len(df_import)} 筆):")
+                st.dataframe(df_import.head(5))
+                
+                if st.button("🚀 開始匯入資料至雲端", type="primary"):
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    total_rows = len(df_import)
+                    
+                    for i, row in df_import.iterrows():
+                        # 確保 SKU 存在
+                        sku = str(row.get('SKU', '')).strip()
+                        if not sku or sku.lower() == 'nan':
+                            continue
+                            
+                        # 準備資料
+                        row_data = {
+                            "SKU": sku,
+                            "Code": row.get('Code', ''),
+                            "Category": row.get('Category', ''),
+                            "Number": row.get('Number', ''),
+                            "Name": row.get('Name', ''),
+                            "ImageFile": row.get('ImageFile', ''),
+                            "Stock": row.get('Stock', 0),
+                            "Location": row.get('Location', ''),
+                            "SN": row.get('SN', ''),
+                            "WarrantyStart": row.get('WarrantyStart', ''),
+                            "WarrantyEnd": row.get('WarrantyEnd', '')
+                        }
+                        
+                        save_data_row(row_data)
+                        
+                        progress = (i + 1) / total_rows
+                        progress_bar.progress(progress)
+                        status_text.text(f"正在匯入: {row_data['Name']} ({i+1}/{total_rows})")
+                    
+                    st.success("✅ 匯入完成！所有資料已同步至雲端資料庫。")
+                    time.sleep(2)
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"讀取 CSV 失敗: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 def page_reports():
     st.markdown("### 📋 異動紀錄")
