@@ -281,6 +281,23 @@ def save_log(entry):
     entry["timestamp"] = firestore.SERVER_TIMESTAMP # 用於排序
     db.collection(COLLECTION_logs).add(entry)
 
+def delete_all_products_logic():
+    """刪除所有產品資料 (批次刪除)"""
+    docs = db.collection(COLLECTION_products).stream()
+    count = 0
+    batch = db.batch()
+    
+    for doc in docs:
+        batch.delete(doc.reference)
+        count += 1
+        # Firestore batch limit is 500
+        if count % 400 == 0:
+            batch.commit()
+            batch = db.batch()
+    
+    batch.commit()
+    return count
+
 def upload_image_to_firebase(uploaded_file, sku):
     """上傳圖片到 Firebase Storage"""
     if uploaded_file is None:
@@ -405,7 +422,7 @@ def main():
         ], label_visibility="collapsed")
         
         st.markdown("---")
-        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.1 (CSV Import)</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.2 (Data Reset)</div>", unsafe_allow_html=True)
 
     # 頁面路由
     if page == "總覽與查詢":
@@ -595,7 +612,7 @@ def process_stock(sku, qty, op_type):
 def page_maintenance():
     st.markdown("### 資料維護")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["新增項目", "編輯表格", "更換圖片", "批次匯入(CSV)"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["新增項目", "編輯表格", "更換圖片", "批次匯入(CSV)", "資料庫重置"])
     
     # === Tab 1: 新增 ===
     with tab1:
@@ -788,6 +805,25 @@ def page_maintenance():
                     
             except Exception as e:
                 st.error(f"讀取 CSV 失敗: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    # === Tab 5: Reset ===
+    with tab5:
+        st.markdown("<div class='form-section'>", unsafe_allow_html=True)
+        st.markdown("<div class='form-title' style='color:#E53E3E;'>⚠️ 危險區域：清空資料庫</div>", unsafe_allow_html=True)
+        st.warning("此操作將會 **永久刪除** 所有庫存商品資料 (products)，無法復原！(Log 紀錄會保留)")
+        
+        confirm_text = st.text_input("請輸入 'DELETE' 以確認執行刪除", placeholder="在此輸入...")
+        
+        if st.button("🗑️ 確認清空所有資料", type="primary"):
+            if confirm_text == "DELETE":
+                with st.spinner("正在刪除所有資料..."):
+                    count = delete_all_products_logic()
+                st.success(f"已清空資料庫！共刪除 {count} 筆資料。")
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.error("確認碼錯誤，請輸入 'DELETE'。")
         st.markdown("</div>", unsafe_allow_html=True)
 
 def page_reports():
