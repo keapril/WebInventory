@@ -56,7 +56,7 @@ if not firebase_admin._apps:
 db = firestore.client()
 bucket = storage.bucket()
 
-# 資料集合名稱設定 (已隔離)
+# 資料集合名稱設定 (已隔離，這裡是新環境)
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
 
@@ -832,45 +832,63 @@ def page_maintenance():
         st.markdown("<div class='form-title'>批次圖片匯入</div>", unsafe_allow_html=True)
         st.info("💡 說明：上傳多張圖片，系統會自動根據「檔名」對應 SKU。例如：檔名為 `A001.jpg` 會自動存入 SKU 為 `A001` 的商品。")
         
-        uploaded_imgs = st.file_uploader("選取多張圖片", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
-        
-        if uploaded_imgs and st.button("開始批次上傳圖片"):
-            # 先讀取所有 SKU 以便快速比對
-            all_skus = set()
+        # 1. 先取得目前所有 SKU
+        all_skus = set()
+        # 這裡不快取，因為可能剛上傳 CSV
+        try:
             docs = db.collection(COLLECTION_products).stream()
             for doc in docs:
                 all_skus.add(doc.id)
+        except:
+            pass
+
+        # 2. 檢查資料庫是否為空 (UX 優化)
+        if not all_skus:
+            st.error("⚠️ 警告：目前資料庫是空的！系統無法進行圖片對應。")
+            st.warning("請先切換到【批次匯入(CSV)】分頁，上傳您的商品清單 `inventory_data.csv`。")
+        else:
+            st.success(f"目前資料庫共有 {len(all_skus)} 筆商品資料，準備就緒。")
             
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            total_files = len(uploaded_imgs)
-            success_count = 0
-            fail_count = 0
+            uploaded_imgs = st.file_uploader("選取多張圖片", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
             
-            for i, img_file in enumerate(uploaded_imgs):
-                # 取得檔名 (不含副檔名) 當作 SKU
-                # 例如 "A001.jpg" -> "A001"
-                sku_candidate = img_file.name.rsplit('.', 1)[0]
+            if uploaded_imgs and st.button("開始批次上傳圖片"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                total_files = len(uploaded_imgs)
+                success_count = 0
+                fail_count = 0
                 
-                status_text.text(f"正在處理: {img_file.name} -> SKU: {sku_candidate}")
+                for i, img_file in enumerate(uploaded_imgs):
+                    # 取得檔名 (不含副檔名) 當作 SKU
+                    sku_candidate = img_file.name.rsplit('.', 1)[0]
+                    
+                    status_text.text(f"正在處理: {img_file.name} -> SKU: {sku_candidate}")
+                    
+                    if sku_candidate in all_skus:
+                        # 執行上傳
+                        url = upload_image_to_firebase(img_file, sku_candidate)
+                        if url:
+                            # 更新資料庫
+                            db.collection(COLLECTION_products).document(sku_candidate).update({"imageFile": url})
+                            success_count += 1
+                    else:
+                        # 嘗試容錯 (例如檔名有空格)
+                        sku_stripped = sku_candidate.strip()
+                        if sku_stripped in all_skus:
+                             url = upload_image_to_firebase(img_file, sku_stripped)
+                             if url:
+                                db.collection(COLLECTION_products).document(sku_stripped).update({"imageFile": url})
+                                success_count += 1
+                        else:
+                            st.warning(f"跳過: 找不到 SKU '{sku_candidate}' 對應的商品資料")
+                            fail_count += 1
+                    
+                    progress_bar.progress((i + 1) / total_files)
                 
-                if sku_candidate in all_skus:
-                    # 執行上傳
-                    url = upload_image_to_firebase(img_file, sku_candidate)
-                    if url:
-                        # 更新資料庫
-                        db.collection(COLLECTION_products).document(sku_candidate).update({"imageFile": url})
-                        success_count += 1
-                else:
-                    st.warning(f"跳過: 找不到 SKU '{sku_candidate}' 對應的商品資料")
-                    fail_count += 1
-                
-                progress_bar.progress((i + 1) / total_files)
-            
-            st.success(f"處理完成！成功上傳: {success_count} 張，失敗/跳過: {fail_count} 張。")
-            if success_count > 0:
-                time.sleep(2)
-                st.rerun()
+                st.success(f"處理完成！成功上傳: {success_count} 張，失敗/跳過: {fail_count} 張。")
+                if success_count > 0:
+                    time.sleep(2)
+                    st.rerun()
                 
         st.markdown("</div>", unsafe_allow_html=True)
         
