@@ -56,8 +56,7 @@ if not firebase_admin._apps:
 db = firestore.client()
 bucket = storage.bucket()
 
-# 【重要修正】修改資料集合名稱，與「產品資料查詢系統」區隔開來
-# 這樣就不會影響到您的另一個 APP 了
+# 資料集合名稱設定 (已隔離)
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
 
@@ -428,7 +427,7 @@ def main():
         ], label_visibility="collapsed")
         
         st.markdown("---")
-        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.4 (Isolated DB)</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.5 (Batch Image Upload)</div>", unsafe_allow_html=True)
 
     # 頁面路由
     if page == "總覽與查詢":
@@ -618,7 +617,8 @@ def process_stock(sku, qty, op_type):
 def page_maintenance():
     st.markdown("### 資料維護")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["新增項目", "編輯表格", "更換圖片", "批次匯入(CSV)", "資料庫重置"])
+    # [新增] Tab 5: 批次匯入(圖片)
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["新增項目", "編輯表格", "更換圖片", "批次匯入(CSV)", "批次匯入(圖片)", "資料庫重置"])
     
     # === Tab 1: 新增 ===
     with tab1:
@@ -825,9 +825,57 @@ def page_maintenance():
                 st.error(f"讀取 CSV 失敗: {e}")
                 st.error("請檢查您的 CSV 檔案格式，建議使用 UTF-8 編碼。")
         st.markdown("</div>", unsafe_allow_html=True)
-        
-    # === Tab 5: Reset ===
+
+    # === Tab 5: 批次圖片匯入 ===
     with tab5:
+        st.markdown("<div class='form-section'>", unsafe_allow_html=True)
+        st.markdown("<div class='form-title'>批次圖片匯入</div>", unsafe_allow_html=True)
+        st.info("💡 說明：上傳多張圖片，系統會自動根據「檔名」對應 SKU。例如：檔名為 `A001.jpg` 會自動存入 SKU 為 `A001` 的商品。")
+        
+        uploaded_imgs = st.file_uploader("選取多張圖片", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+        
+        if uploaded_imgs and st.button("開始批次上傳圖片"):
+            # 先讀取所有 SKU 以便快速比對
+            all_skus = set()
+            docs = db.collection(COLLECTION_products).stream()
+            for doc in docs:
+                all_skus.add(doc.id)
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            total_files = len(uploaded_imgs)
+            success_count = 0
+            fail_count = 0
+            
+            for i, img_file in enumerate(uploaded_imgs):
+                # 取得檔名 (不含副檔名) 當作 SKU
+                # 例如 "A001.jpg" -> "A001"
+                sku_candidate = img_file.name.rsplit('.', 1)[0]
+                
+                status_text.text(f"正在處理: {img_file.name} -> SKU: {sku_candidate}")
+                
+                if sku_candidate in all_skus:
+                    # 執行上傳
+                    url = upload_image_to_firebase(img_file, sku_candidate)
+                    if url:
+                        # 更新資料庫
+                        db.collection(COLLECTION_products).document(sku_candidate).update({"imageFile": url})
+                        success_count += 1
+                else:
+                    st.warning(f"跳過: 找不到 SKU '{sku_candidate}' 對應的商品資料")
+                    fail_count += 1
+                
+                progress_bar.progress((i + 1) / total_files)
+            
+            st.success(f"處理完成！成功上傳: {success_count} 張，失敗/跳過: {fail_count} 張。")
+            if success_count > 0:
+                time.sleep(2)
+                st.rerun()
+                
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+    # === Tab 6: Reset ===
+    with tab6:
         st.markdown("<div class='form-section'>", unsafe_allow_html=True)
         st.markdown("<div class='form-title' style='color:#E53E3E;'>⚠️ 危險區域：清空資料庫</div>", unsafe_allow_html=True)
         st.warning("此操作將會 **永久刪除** 所有庫存商品資料 (products)，無法復原！(Log 紀錄會保留)")
