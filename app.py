@@ -14,16 +14,16 @@ from firebase_admin import credentials, firestore, storage
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(
-    page_title="儀器耗材中控系統",
+    page_title="Inventory OS",
     page_icon="▫️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ==========================================
-# 🔧【設定區】Bucket 名稱
+# 🔧【設定區】Bucket 名稱 (已更新為您提供的名稱)
 # ==========================================
-CUSTOM_BUCKET_NAME = "product-system-900c4.appspot.com"
+CUSTOM_BUCKET_NAME = "product-system-900c4.firebasestorage.app"
 
 # --- 2. Firebase 初始化 ---
 if not firebase_admin._apps:
@@ -395,18 +395,22 @@ def delete_all_products_logic():
         batch.commit()
     return count
 
-def upload_image_to_firebase(uploaded_file, sku):
+def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
     if uploaded_file is None: return None
     try:
+        # 使用傳入的 bucket 或預設 bucket
+        target_bucket = bucket_override if bucket_override else bucket
+        
         safe_sku = "".join([c for c in sku if c.isalnum() or c in ('-','_')])
         file_ext = uploaded_file.name.split('.')[-1]
         blob_name = f"images/{safe_sku}-{int(time.time())}.{file_ext}"
-        blob = bucket.blob(blob_name)
+        blob = target_bucket.blob(blob_name)
         blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
         blob.make_public()
         return blob.public_url
     except Exception as e:
         st.error(f"上傳失敗: {e}")
+        st.caption("請檢查左側『連線診斷』確認 Bucket 名稱是否正確，或是否已啟用 Storage。")
         return None
 
 # --- 5. 主程式介面 ---
@@ -414,18 +418,33 @@ def upload_image_to_firebase(uploaded_file, sku):
 def main():
     st.sidebar.markdown("<div class='sidebar-brand'>儀器耗材中控</div>", unsafe_allow_html=True)
     
-    # 診斷工具 (小小的)
-    if st.sidebar.button("連線檢查"):
-        try:
-            exists = bucket.exists()
-            if exists:
-                st.sidebar.success(f"Bucket 連線成功:\n{CUSTOM_BUCKET_NAME}")
-            else:
-                st.sidebar.error("找不到 Bucket")
-        except Exception as e:
-            st.sidebar.error(f"錯誤: {e}")
+    # === 🔧 連線診斷工具 (新增) ===
+    with st.sidebar.expander("🔧 連線診斷"):
+        st.caption("如果圖片上傳失敗，請在此測試。")
+        
+        # 讓使用者輸入從畫面上看到的名稱
+        user_bucket_name = st.text_input("Bucket 名稱", value=CUSTOM_BUCKET_NAME, help="請輸入 gs:// 後面的文字")
+        
+        if st.button("測試連線"):
+            try:
+                test_bucket = storage.bucket(name=user_bucket_name)
+                if test_bucket.exists():
+                    st.success("✅ 連線成功！")
+                    # 將測試成功的 bucket 暫存起來供本次使用
+                    st.session_state['valid_bucket'] = test_bucket
+                    st.session_state['valid_bucket_name'] = user_bucket_name
+                else:
+                    st.error("❌ 找不到此 Bucket")
+                    st.info("請確認 Firebase Console > Storage 是否已點擊 'Get Started'。")
+            except Exception as e:
+                st.error(f"錯誤: {e}")
+    # ===============================
 
-    # 中文化選單
+    # 優先使用測試成功的 Bucket
+    global bucket
+    if 'valid_bucket' in st.session_state:
+        bucket = st.session_state['valid_bucket']
+
     menu_options = [
         "總覽與查詢", 
         "入庫作業", 
@@ -447,7 +466,6 @@ def render_magazine_card(row):
     img_url = row.get('ImageFile', '')
     has_img = img_url and str(img_url).startswith("http")
     
-    # 圖片區塊
     img_tag = f'<img src="{img_url}" class="magazine-img">' if has_img else '<div class="magazine-img" style="display:flex;align-items:center;justify-content:center;color:#ccc;font-size:0.7rem;">無圖片</div>'
     
     stock = int(row['Stock'])
@@ -482,16 +500,14 @@ def page_search():
     st.title("總覽 Overview")
     df = load_data()
     
-    # 極簡數據列
     c1, c2, c3 = st.columns(3)
-    c1.metric("總品項數", len(df))
+    c1.metric("總品項", len(df))
     low_stock = len(df[df['Stock'] <= 5])
-    c2.metric("低庫存警示", low_stock, delta="需補貨" if low_stock > 0 else None, delta_color="inverse")
-    c3.metric("總庫存量", int(df['Stock'].sum()))
+    c2.metric("低庫存", low_stock, delta="Alert" if low_stock > 0 else None, delta_color="inverse")
+    c3.metric("總數量", int(df['Stock'].sum()))
     
     st.markdown("---")
     
-    # 搜尋
     c_search, c_space = st.columns([2, 1])
     search_term = c_search.text_input("搜尋庫存", placeholder="輸入關鍵字 (名稱、SKU、地點)...")
     
@@ -504,7 +520,7 @@ def page_search():
     st.write("") 
     
     if result.empty:
-        st.info("沒有找到相關資料")
+        st.info("無符合資料")
     else:
         for index, row in result.iterrows():
             render_magazine_card(row)
@@ -544,20 +560,15 @@ def process_stock(sku, qty, op_type):
             "Quantity": qty,
             "Note": "Manual Ops"
         })
-        st.toast(f"成功！ {sku} 目前庫存: {new_stock}")
+        st.toast(f"成功！ {sku} 庫存: {new_stock}")
     else:
         st.error(f"找不到 SKU: {sku}")
 
-# === 資料維護 (含所有功能分頁) ===
-
 def page_maintenance():
     st.title("資料維護")
-    
-    # 這裡將功能選項整合進 Tabs，符合 SAAS 風格
     tabs = st.tabs(["新增項目", "編輯表格", "更換圖片", "匯入 CSV", "匯入圖片", "系統重置"])
     
-    # 1. 新增
-    with tabs[0]:
+    with tabs[0]: # 新增
         st.caption("建立一筆新的庫存資料。")
         with st.form("add_form", clear_on_submit=False):
             st.subheader("基本資訊")
@@ -570,36 +581,27 @@ def page_maintenance():
             
             st.subheader("詳細規格")
             c5, c6 = st.columns(2)
-            sn = c5.text_input("產品序號 (Serial No.)")
-            
-            # [功能新增] 地點選擇邏輯
+            sn = c5.text_input("序號 (S/N)")
             loc_options = ["北", "中", "南", "高", "醫院"]
             selected_loc = c6.selectbox("存放地點", loc_options)
             
             final_loc = selected_loc
             
-            # [功能新增] 合約保固日期
             enable_warranty = st.checkbox("啟用合約保固日期")
             if enable_warranty:
                 c_w1, c_w2 = st.columns(2)
-                w_start = c_w1.date_input("保固開始日")
-                w_end = c_w2.date_input("保固結束日")
+                w_start = c_w1.date_input("保固開始")
+                w_end = c_w2.date_input("保固結束")
             else:
-                w_start = None
-                w_end = None
+                w_start, w_end = None, None
 
             stock = st.number_input("初始庫存", 0, value=1)
-            
-            # 表單提交按鈕
             submitted = st.form_submit_button("建立資料")
 
-        # 醫院名稱輸入 (移出 form 以支援動態顯示，或在 form 內需用 session state)
-        # 這裡為了簡單，我們如果選了醫院，就在 form 下方補充輸入
         hospital_name = ""
         if selected_loc == "醫院":
             hospital_name = st.text_input("請輸入醫院名稱", key="hosp_input")
-            if hospital_name:
-                final_loc = f"醫院-{hospital_name}"
+            if hospital_name: final_loc = f"醫院-{hospital_name}"
         
         if submitted:
             if code and name:
@@ -614,43 +616,36 @@ def page_maintenance():
                     })
                     st.success(f"新增成功: {sku}")
             else:
-                st.error("編碼 (Code) 與 品名 (Name) 為必填欄位。")
+                st.error("Code 與 Name 為必填。")
 
-    # 2. 編輯
-    with tabs[1]:
-        st.caption("直接在表格上點擊修改，完成後按儲存。")
+    with tabs[1]: # 編輯
+        st.caption("直接修改表格內容。")
         df = load_data()
-        
-        # 設定欄位顯示格式
         col_config = {
             "SKU": st.column_config.TextColumn("SKU", disabled=True),
             "WarrantyStart": st.column_config.DateColumn("保固開始"),
             "WarrantyEnd": st.column_config.DateColumn("保固結束"),
             "ImageFile": st.column_config.ImageColumn("圖片"),
         }
-        
         edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="data_editor_main", column_config=col_config)
-        
         if st.button("儲存變更", type="primary"):
             with st.spinner("同步中..."):
                 for i, row in edited.iterrows():
                     if row['SKU']: save_data_row(row)
-            st.success("資料庫已更新。")
-            time.sleep(1); st.rerun()
+            st.success("已更新。"); time.sleep(1); st.rerun()
 
-    # 3. 換圖
-    with tabs[2]:
-        st.caption("更新單一商品的圖片。")
+    with tabs[2]: # 換圖
+        st.caption("更新單一圖片。")
         df_cur = load_data()
         if not df_cur.empty:
             sel = st.selectbox("選擇商品", df_cur['SKU'].unique())
             if sel:
                 row = df_cur[df_cur['SKU'] == sel].iloc[0]
-                st.write(f"已選擇: **{row['Name']}**")
+                st.write(f"已選: **{row['Name']}**")
                 
                 curr_img = row.get('ImageFile')
                 if curr_img and str(curr_img).startswith('http'):
-                    st.image(curr_img, width=150, caption="目前圖片")
+                    st.image(curr_img, width=150)
                 
                 f = st.file_uploader("上傳新圖片", type=["jpg","png"], key="single_uploader")
                 if f and st.button("更新圖片"):
@@ -659,12 +654,11 @@ def page_maintenance():
                         db.collection(COLLECTION_products).document(sel).update({"imageFile": url})
                         st.success("圖片已更新。")
         else:
-            st.info("目前沒有商品資料。")
+            st.info("無資料。")
 
-    # 4. CSV 匯入
-    with tabs[3]:
-        st.caption("批次匯入 CSV 檔案。")
-        up_csv = st.file_uploader("拖曳或選擇 CSV 檔案", type=["csv"], key="csv_batch_uploader")
+    with tabs[3]: # CSV
+        st.caption("批次匯入 CSV。")
+        up_csv = st.file_uploader("選擇 CSV 檔案", type=["csv"], key="csv_batch_uploader")
         if up_csv:
             try:
                 df_im = None
@@ -697,31 +691,27 @@ def page_maintenance():
                                 })
                             progress_bar.progress((i+1)/len(df_im))
                         
-                        st.success("匯入完成。")
-                        time.sleep(1)
-                        st.rerun()
+                        st.success("匯入完成。"); time.sleep(1); st.rerun()
                 else:
-                    st.error("無法讀取 CSV 檔案。")
+                    st.error("無法讀取 CSV。")
             except Exception as e:
                 st.error(f"錯誤: {e}")
 
-    # 5. 圖片批次
-    with tabs[4]:
-        st.caption("批次上傳圖片 (檔名需與 SKU 相同)。")
+    with tabs[4]: # 圖片批次
+        st.caption("批次上傳 (檔名 = SKU)。")
         all_skus = [d.id for d in db.collection(COLLECTION_products).stream()]
         
         if not all_skus:
-            st.warning("資料庫是空的，請先匯入 CSV。")
+            st.warning("資料庫為空，請先匯入 CSV。")
         else:
             imgs = st.file_uploader("選擇多張圖片", type=["jpg", "png", "jpeg"], accept_multiple_files=True, key="multi_img_uploader")
             if imgs and st.button("開始上傳"):
-                bar = st.progress(0)
-                succ = 0
-                fail = 0
+                bar = st.progress(0); succ = 0; fail = 0
                 
                 for i, f in enumerate(imgs):
                     sku = f.name.rsplit('.', 1)[0].strip()
                     if sku in all_skus:
+                        # 傳遞 bucket 物件
                         u = upload_image_to_firebase(f, sku)
                         if u:
                             db.collection(COLLECTION_products).document(sku).update({"imageFile": u})
@@ -734,19 +724,14 @@ def page_maintenance():
                 time.sleep(2)
                 st.rerun()
 
-    # 6. 重置
-    with tabs[5]:
-        st.error("危險區域：此操作將永久刪除所有資料。")
+    with tabs[5]: # 重置
+        st.error("危險區域：永久刪除所有資料。")
         confirm = st.text_input("輸入 'DELETE' 確認刪除", key="delete_confirm")
         if st.button("清空資料庫"):
             if confirm == "DELETE":
-                with st.spinner("刪除中..."):
-                    c = delete_all_products_logic()
-                st.success(f"已刪除 {c} 筆資料。")
-                time.sleep(1)
-                st.rerun()
-            else:
-                st.error("確認碼錯誤。")
+                with st.spinner("刪除中..."): c = delete_all_products_logic()
+                st.success(f"已刪除 {c} 筆資料。"); time.sleep(1); st.rerun()
+            else: st.error("確認碼錯誤。")
 
 def page_reports():
     st.title("異動紀錄")
@@ -755,17 +740,15 @@ def page_reports():
     st.download_button("下載 CSV", df.to_csv(index=False).encode('utf-8-sig'), "log.csv", "text/csv")
 
 def generate_inventory_image(df_result):
-    # 簡單報表生成邏輯 (維持不變)
     card_width, card_height, padding, header_height = 800, 220, 24, 100
     total_height = header_height + (len(df_result) * (card_height + padding)) + padding
     img = Image.new('RGB', (card_width + padding*2, total_height), color='#F4F6F8')
     draw = ImageDraw.Draw(img)
-    draw.rectangle([0, 0, card_width + padding*2, header_height], fill='#2D3436') # 改深灰標題
+    draw.rectangle([0, 0, card_width + padding*2, header_height], fill='#2D3436')
     draw.text((padding, 35), f"INVENTORY REPORT - {datetime.now().strftime('%Y-%m-%d')}", fill='white')
     y_offset = header_height + padding
     for _, row in df_result.iterrows():
         draw.rectangle([padding, y_offset, padding + card_width, y_offset + card_height], fill='#FFFFFF', outline='#DFE6E9', width=2)
-        # (圖片處理邏輯省略以節省長度，功能與之前相同)
         text_x, text_y = padding + 220, y_offset + 35
         draw.text((text_x, text_y), f"{row['Name']}", fill='#2D3436')
         text_y += 35
