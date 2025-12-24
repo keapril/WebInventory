@@ -20,28 +20,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. Firebase 初始化 (超級容錯版) ---
+# --- 2. Firebase 初始化 (超級容錯版 - 核心代碼) ---
+# 這裡就是您提到的「超級容錯」部分，能處理各種金鑰格式問題
 if not firebase_admin._apps:
     try:
+        # 1. 檢查 Secrets 是否存在
         if "firebase" not in st.secrets:
             st.error("❌ 錯誤：Streamlit Secrets 中找不到 [firebase] 區塊。")
             st.stop()
         
+        # 2. 取得金鑰文字
         token_content = st.secrets["firebase"]["text_key"]
+        
+        # 3. 嘗試解析 JSON (第一道防線：strict=False)
         try:
             key_dict = json.loads(token_content, strict=False)
         except json.JSONDecodeError:
-             # 嘗試簡單修復
+             # 4. 如果失敗，嘗試修復換行符號 (第二道防線)
             try:
-                # 有時候換行符號會出問題，嘗試容錯
+                # 常見錯誤：複製時換行變成了真正的 Enter，導致 JSON 格式錯誤
+                # 這裡嘗試將其修復回 \n
                 key_dict = json.loads(token_content.replace('\n', '\\n'), strict=False)
             except:
-                st.error("❌ JSON 解析失敗，請檢查 Secrets 格式。")
+                st.error("❌ JSON 解析嚴重失敗，請檢查 Secrets 格式是否缺損。")
                 st.stop()
 
+        # 5. 修復 private_key 欄位 (第三道防線)
+        # Firebase Admin 需要真正的換行符號，而不是字串的 "\\n"
         if "private_key" in key_dict:
             key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
 
+        # 6. 正式連線
         cred = credentials.Certificate(key_dict)
         project_id = key_dict.get('project_id')
         bucket_name = f"{project_id}.appspot.com"
@@ -56,7 +65,8 @@ if not firebase_admin._apps:
 db = firestore.client()
 bucket = storage.bucket()
 
-# 資料集合名稱設定 (已隔離，這裡是新環境)
+# --- 資料庫設定 (已隔離) ---
+# 這是全新的資料表名稱，確保不影響您的 APP
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
 
@@ -353,7 +363,8 @@ def generate_inventory_image(df_result):
         
         if img_url and isinstance(img_url, str) and img_url.startswith("http"):
             try:
-                response = requests.get(img_url, timeout=3)
+                # 加大 timeout 避免圖片下載超時
+                response = requests.get(img_url, timeout=5)
                 if response.status_code == 200:
                     prod_img = Image.open(io.BytesIO(response.content)).convert('RGB')
             except:
@@ -427,7 +438,7 @@ def main():
         ], label_visibility="collapsed")
         
         st.markdown("---")
-        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.5 (Batch Image Upload)</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.6 (Super Fault-Tolerant)</div>", unsafe_allow_html=True)
 
     # 頁面路由
     if page == "總覽與查詢":
