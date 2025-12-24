@@ -56,8 +56,10 @@ if not firebase_admin._apps:
 db = firestore.client()
 bucket = storage.bucket()
 
-COLLECTION_products = "products"
-COLLECTION_logs = "logs"
+# 【重要修正】修改資料集合名稱，與「產品資料查詢系統」區隔開來
+# 這樣就不會影響到您的另一個 APP 了
+COLLECTION_products = "instrument_consumables" 
+COLLECTION_logs = "consumables_logs"
 
 # --- 3. 自定義 CSS (保留您的原始設計) ---
 st.markdown("""
@@ -282,11 +284,12 @@ def save_log(entry):
     db.collection(COLLECTION_logs).add(entry)
 
 def delete_all_products_logic():
-    """刪除所有產品資料 (批次刪除)"""
+    """刪除所有產品資料 (批次刪除) - 修復 Empty Batch Error"""
     docs = db.collection(COLLECTION_products).stream()
     count = 0
     batch = db.batch()
     
+    # 收集需要刪除的文件
     for doc in docs:
         batch.delete(doc.reference)
         count += 1
@@ -295,7 +298,10 @@ def delete_all_products_logic():
             batch.commit()
             batch = db.batch()
     
-    batch.commit()
+    # [修復] 只有當還有剩餘未提交的刪除操作時，才執行 commit
+    if count > 0 and count % 400 != 0:
+        batch.commit()
+        
     return count
 
 def upload_image_to_firebase(uploaded_file, sku):
@@ -422,7 +428,7 @@ def main():
         ], label_visibility="collapsed")
         
         st.markdown("---")
-        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.2 (Data Reset)</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; color: #4A5568; font-size: 0.8rem;'>Cloud v8.4 (Isolated DB)</div>", unsafe_allow_html=True)
 
     # 頁面路由
     if page == "總覽與查詢":
@@ -757,12 +763,15 @@ def page_maintenance():
         
         if uploaded_csv:
             try:
-                # 嘗試讀取 (自動偵測編碼)
+                # [修復] 增強 CSV 讀取 (處理 BOM 與欄位空白)
                 try:
-                    df_import = pd.read_csv(uploaded_csv, encoding='utf-8')
+                    df_import = pd.read_csv(uploaded_csv, encoding='utf-8-sig') # 優先嘗試 utf-8-sig 去除 BOM
                 except:
                     uploaded_csv.seek(0)
-                    df_import = pd.read_csv(uploaded_csv, encoding='big5') # 台灣常用的 Excel 編碼
+                    df_import = pd.read_csv(uploaded_csv, encoding='big5') # 再試 big5
+                
+                # [修復] 標準化欄位名稱 (去除前後空白、轉小寫比對)
+                df_import.columns = [c.strip() for c in df_import.columns]
                 
                 st.write(f"預覽資料 (共 {len(df_import)} 筆):")
                 st.dataframe(df_import.head(5))
@@ -772,25 +781,34 @@ def page_maintenance():
                     status_text = st.empty()
                     total_rows = len(df_import)
                     
+                    # 建立欄位映射 (Case Insensitive)
+                    col_map = {c.lower(): c for c in df_import.columns}
+                    
+                    def get_val(key):
+                        # 嘗試找 'SKU', 'sku', 'Sku' 等各種寫法
+                        if key.lower() in col_map:
+                            return row.get(col_map[key.lower()], '')
+                        return ''
+
                     for i, row in df_import.iterrows():
                         # 確保 SKU 存在
-                        sku = str(row.get('SKU', '')).strip()
+                        sku = str(get_val('sku')).strip()
                         if not sku or sku.lower() == 'nan':
                             continue
                             
                         # 準備資料
                         row_data = {
                             "SKU": sku,
-                            "Code": row.get('Code', ''),
-                            "Category": row.get('Category', ''),
-                            "Number": row.get('Number', ''),
-                            "Name": row.get('Name', ''),
-                            "ImageFile": row.get('ImageFile', ''),
-                            "Stock": row.get('Stock', 0),
-                            "Location": row.get('Location', ''),
-                            "SN": row.get('SN', ''),
-                            "WarrantyStart": row.get('WarrantyStart', ''),
-                            "WarrantyEnd": row.get('WarrantyEnd', '')
+                            "Code": get_val('code'),
+                            "Category": get_val('category'),
+                            "Number": get_val('number'),
+                            "Name": get_val('name'),
+                            "ImageFile": get_val('imagefile'),
+                            "Stock": get_val('stock'),
+                            "Location": get_val('location'),
+                            "SN": get_val('sn'),
+                            "WarrantyStart": get_val('warrantystart'),
+                            "WarrantyEnd": get_val('warrantyend')
                         }
                         
                         save_data_row(row_data)
@@ -805,6 +823,7 @@ def page_maintenance():
                     
             except Exception as e:
                 st.error(f"讀取 CSV 失敗: {e}")
+                st.error("請檢查您的 CSV 檔案格式，建議使用 UTF-8 編碼。")
         st.markdown("</div>", unsafe_allow_html=True)
         
     # === Tab 5: Reset ===
@@ -817,11 +836,15 @@ def page_maintenance():
         
         if st.button("🗑️ 確認清空所有資料", type="primary"):
             if confirm_text == "DELETE":
-                with st.spinner("正在刪除所有資料..."):
-                    count = delete_all_products_logic()
-                st.success(f"已清空資料庫！共刪除 {count} 筆資料。")
-                time.sleep(2)
-                st.rerun()
+                try:
+                    with st.spinner("正在刪除所有資料..."):
+                        count = delete_all_products_logic()
+                    st.success(f"已清空資料庫！共刪除 {count} 筆資料。")
+                    time.sleep(2)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"刪除失敗: {e}")
+                    st.caption("建議檢查 Firebase 權限或稍後再試。")
             else:
                 st.error("確認碼錯誤，請輸入 'DELETE'。")
         st.markdown("</div>", unsafe_allow_html=True)
