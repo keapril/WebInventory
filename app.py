@@ -6,7 +6,7 @@ import json
 import time
 import requests
 from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 
 # Firebase 相關套件
 import firebase_admin
@@ -327,6 +327,11 @@ def load_data():
         df = pd.DataFrame(data)
         for col in default_cols:
             if col not in df.columns: df[col] = ""
+        
+        # [修復] 強制轉換日期格式，避免 data_editor 崩潰
+        df["WarrantyStart"] = pd.to_datetime(df["WarrantyStart"], errors='coerce')
+        df["WarrantyEnd"] = pd.to_datetime(df["WarrantyEnd"], errors='coerce')
+        
         df["Stock"] = pd.to_numeric(df["Stock"], errors='coerce').fillna(0).astype(int)
         return df
     except Exception as e:
@@ -346,10 +351,10 @@ def save_data_row(row_data):
     ws = row_data.get("WarrantyStart")
     we = row_data.get("WarrantyEnd")
     
-    # 日期處理：如果是 date 物件，轉字串；如果是字串，保持原樣；如果是 NaT/None，轉空字串
-    if isinstance(ws, (datetime, pd.Timestamp)): ws = ws.strftime('%Y-%m-%d')
-    elif hasattr(ws, "strftime"): ws = ws.strftime('%Y-%m-%d') # Handle datetime.date
-    if isinstance(we, (datetime, pd.Timestamp)): we = we.strftime('%Y-%m-%d')
+    # 日期處理
+    if isinstance(ws, (datetime, pd.Timestamp, date)): ws = ws.strftime('%Y-%m-%d')
+    elif hasattr(ws, "strftime"): ws = ws.strftime('%Y-%m-%d')
+    if isinstance(we, (datetime, pd.Timestamp, date)): we = we.strftime('%Y-%m-%d')
     elif hasattr(we, "strftime"): we = we.strftime('%Y-%m-%d')
 
     if pd.isna(ws): ws = ""
