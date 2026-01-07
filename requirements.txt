@@ -1,5 +1,0 @@
-streamlit
-pandas
-firebase-admin
-Pillow
-requests
