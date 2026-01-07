@@ -2,4 +2,5 @@ streamlit
 pandas
 firebase-admin
 Pillow
+boto3
 requests
