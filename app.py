@@ -78,156 +78,143 @@ except Exception as e:
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
 
-# --- 3. UI 設計：現代懸浮毛玻璃風 (Modern Glassmorphism) ---
+# --- 3. UI 設計：透明毛玻璃風 (Glassmorphism) ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
 
     :root {
-        /* 背景不再是死白，而是帶有極淡的漸層 */
-        --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        --card-bg: rgba(255, 255, 255, 0.95);
-        --text-main: #2d3436;
-        --text-sub: #636e72;
-        --accent-color: #0984e3; /* 科技藍 */
-        --shadow-card: 0 10px 20px rgba(0,0,0,0.08), 0 6px 6px rgba(0,0,0,0.1);
-        --radius-lg: 16px;
+        /* 夢幻極光漸層背景 */
+        --bg-gradient: linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%);
+        /* 毛玻璃卡片背景：半透明白 */
+        --glass-bg: rgba(255, 255, 255, 0.65);
+        --glass-border: rgba(255, 255, 255, 0.8);
+        --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        --text-main: #2b2b2b;
+        --text-sub: #555;
     }
 
     .stApp {
-        background: var(--bg-gradient);
-        background-attachment: fixed; /* 背景固定，讓內容滑動時更有層次 */
-        color: var(--text-main);
+        background-image: var(--bg-gradient);
+        background-attachment: fixed;
         font-family: 'Inter', 'Noto Sans TC', sans-serif;
+        color: var(--text-main);
     }
 
-    /* 側邊欄半透明化 */
+    /* 側邊欄也要毛玻璃 */
     section[data-testid="stSidebar"] {
-        background-color: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(10px);
-        border-right: 1px solid rgba(255,255,255,0.5);
+        background-color: rgba(255, 255, 255, 0.7) !important;
+        backdrop-filter: blur(12px); /* 模糊特效 */
+        border-right: 1px solid rgba(255, 255, 255, 0.6);
     }
+    
+    /* 標題顏色加深，避免在亮背景看不清 */
+    h1, h2, h3 { color: #1a1a1a !important; }
 
-    /* 卡片設計 - 懸浮感核心 */
+    /* --- 核心：毛玻璃卡片 --- */
     .glass-card {
-        background: var(--card-bg);
-        border-radius: var(--radius-lg);
-        padding: 20px;
+        background: var(--glass-bg);
+        backdrop-filter: blur(8px);       /* 背後模糊 */
+        -webkit-backdrop-filter: blur(8px);
+        border-radius: 20px;
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+        padding: 24px;
         margin-bottom: 20px;
-        /* 雙層陰影製造懸浮感 */
-        box-shadow: var(--shadow-card);
-        border: 1px solid rgba(255, 255, 255, 0.8);
         display: flex;
-        gap: 20px;
         align-items: center;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        gap: 20px;
+        transition: transform 0.3s ease;
     }
     .glass-card:hover {
-        transform: translateY(-4px); /* 滑鼠移過去會浮起來 */
-        box-shadow: 0 15px 30px rgba(0,0,0,0.12);
+        transform: translateY(-5px); /* 懸浮感 */
+        background: rgba(255, 255, 255, 0.85); /* hover 時變不透明一點 */
     }
 
-    /* 圖片區塊 */
-    .img-container {
-        width: 85px;
-        height: 85px;
-        border-radius: 12px;
+    /* 圖片容器 */
+    .img-box {
+        width: 80px;
+        height: 80px;
+        border-radius: 16px;
         overflow: hidden;
-        box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
-        background: #fff;
+        background: rgba(255,255,255,0.5);
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
         flex-shrink: 0;
     }
-    .card-img {
+    .img-content {
         width: 100%;
         height: 100%;
         object-fit: cover;
     }
 
-    /* 內容排版 */
-    .content-area {
-        flex-grow: 1;
-    }
-    .card-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 8px;
-    }
-    .item-name {
+    /* 內容區 */
+    .content-box { flex-grow: 1; }
+    
+    .item-title {
         font-size: 1.1rem;
         font-weight: 700;
-        color: #2d3436;
-        letter-spacing: 0.5px;
-    }
-    
-    /* 標籤設計 */
-    .badge {
-        font-size: 0.75rem;
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-    }
-    .badge-sku { background: #dfe6e9; color: #636e72; }
-    .badge-cat { background: #e0f7fa; color: #0097a7; }
-    
-    /* 警示標籤 - 顏色加重 */
-    .alert-tag {
-        font-size: 0.7rem;
-        padding: 3px 8px;
-        border-radius: 20px;
-        font-weight: 700;
-        color: white;
-        margin-left: 5px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .bg-danger { background: linear-gradient(135deg, #ff7675, #d63031); }
-    .bg-warning { background: linear-gradient(135deg, #ffeaa7, #fdcb6e); color: #8a5a00; }
-
-    /* 次要資訊 */
-    .meta-info {
-        font-size: 0.85rem;
-        color: #636e72;
-        margin-top: 6px;
+        color: #2c3e50;
+        margin-bottom: 6px;
         display: flex;
         align-items: center;
-        gap: 15px;
+        gap: 10px;
     }
-    .meta-item { display: flex; align-items: center; gap: 5px; }
 
-    /* 庫存大數字 */
-    .stock-display {
+    /* 膠囊標籤 */
+    .pill {
+        padding: 4px 12px;
+        border-radius: 30px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    .pill-sku { background: rgba(0,0,0,0.05); color: #666; border: 1px solid rgba(255,255,255,0.5); }
+    .pill-cat { background: rgba(255,255,255,0.8); color: #0984e3; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+
+    /* 狀態燈號 */
+    .status-dot {
+        height: 8px;
+        width: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+    .dot-green { background-color: #00b894; box-shadow: 0 0 8px #00b894; }
+    .dot-red { background-color: #d63031; box-shadow: 0 0 8px #d63031; }
+    .dot-orange { background-color: #fdcb6e; box-shadow: 0 0 8px #fdcb6e; }
+
+    /* 庫存數字區 */
+    .stock-area {
         text-align: right;
-        min-width: 90px;
-        padding-left: 20px;
-        border-left: 2px solid #f1f2f6;
+        min-width: 80px;
+        padding-left: 15px;
+        border-left: 1px solid rgba(0,0,0,0.05);
     }
     .stock-val {
-        font-family: 'Inter', sans-serif;
-        font-size: 2.2rem;
+        font-size: 2rem;
         font-weight: 700;
         color: #2d3436;
-        line-height: 1;
-        text-shadow: 2px 2px 0px rgba(0,0,0,0.05); /* 數字立體感 */
+        text-shadow: 2px 2px 0 rgba(255,255,255,0.5);
     }
-    .stock-txt {
+    .stock-lbl {
         font-size: 0.7rem;
-        font-weight: 600;
-        color: #b2bec3;
+        color: #888;
         text-transform: uppercase;
         letter-spacing: 1px;
-        margin-top: 5px;
     }
 
-    /* 輸入框優化 */
-    .stTextInput input, .stNumberInput input {
-        border-radius: 8px !important;
-        border: 1px solid #dfe6e9 !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.03) !important;
+    /* Streamlit 元件優化：半透明化 */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        background-color: rgba(255, 255, 255, 0.6) !important;
+        border: 1px solid rgba(255, 255, 255, 0.5) !important;
+        backdrop-filter: blur(5px);
+        border-radius: 12px !important;
     }
-    .stTextInput input:focus {
-        border-color: #0984e3 !important;
-        box-shadow: 0 0 0 3px rgba(9, 132, 227, 0.1) !important;
+    div[data-testid="stMetric"] {
+        background-color: rgba(255, 255, 255, 0.5);
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.6);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -288,26 +275,24 @@ def save_data_row(row_data):
     ws = row_data.get("WarrantyStart")
     we = row_data.get("WarrantyEnd")
     
-    # --- 🔧 修正開始：嚴格檢查日期格式 ---
-    # 如果是 Pandas 的 NaT (Not a Time) 或空值，直接設為空字串
-    if pd.isna(ws): 
-        ws = ""
-    elif isinstance(ws, (datetime, pd.Timestamp, date)): 
-        ws = ws.strftime('%Y-%m-%d')
-    else:
-        ws = str(ws) if ws else ""
+    # --- 🔧 修正：嚴格檢查日期格式，防止 NaTType 錯誤 ---
+    def clean_date(d):
+        if pd.isna(d) or str(d).strip() == "" or str(d).lower() == "nat":
+            return ""
+        if isinstance(d, (datetime, pd.Timestamp, date)):
+            return d.strftime('%Y-%m-%d')
+        return str(d)
 
-    if pd.isna(we): 
-        we = ""
-    elif isinstance(we, (datetime, pd.Timestamp, date)): 
-        we = we.strftime('%Y-%m-%d')
-    else:
-        we = str(we) if we else ""
-    # --- 修正結束 ---
+    ws = clean_date(ws)
+    we = clean_date(we)
+    # -----------------------------------------------
 
     try: stock_val = int(row_data.get("Stock", 0))
     except: stock_val = 0
     
+    sku = str(row_data.get("SKU", ""))
+    if not sku: return # 沒有 SKU 就不存
+
     data_dict = {
         "code": str(row_data.get("Code", "")),
         "categoryName": str(row_data.get("Category", "")),
@@ -317,12 +302,11 @@ def save_data_row(row_data):
         "stock": stock_val,
         "location": str(row_data.get("Location", "")),
         "sn": str(row_data.get("SN", "")),
-        "warrantyStart": str(ws),
-        "warrantyEnd": str(we),
+        "warrantyStart": ws,
+        "warrantyEnd": we,
         "updatedAt": firestore.SERVER_TIMESTAMP
     }
-    db.collection(COLLECTION_products).document(str(row_data["SKU"])).set(data_dict, merge=True)
-    st.cache_data.clear()
+    db.collection(COLLECTION_products).document(sku).set(data_dict, merge=True)
 
 def save_log(entry):
     entry["timestamp"] = firestore.SERVER_TIMESTAMP
@@ -521,68 +505,55 @@ def main():
     elif page == "異動紀錄": page_reports()
     elif page == "保固管理": page_warranty_management()  # 🆕
 
-def render_nordic_card(row):
-    """渲染現代懸浮風卡片 (Glassmorphism)"""
-    # 1. 圖片
+def render_glass_card(row):
+    """渲染透明毛玻璃卡片 (Glassmorphism)"""
+    # 圖片
     img_url = row.get('ImageFile', '')
     has_img = img_url and str(img_url).startswith("http")
     
     if has_img:
-        img_html = f'<img src="{img_url}" class="card-img">'
+        img_html = f'<img src="{img_url}" class="img-content">'
     else:
-        # 無圖時顯示一個漂亮的圖標
-        img_html = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#b2bec3;font-size:1.8rem;">📦</div>'
-    
-    # 2. 庫存邏輯
+        img_html = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#999;font-size:1.5rem;">💎</div>'
+
+    # 庫存與狀態
     try: stock = int(row['Stock'])
     except: stock = 0
-        
-    alerts = []
-    if stock == 0:
-        alerts.append('<span class="alert-tag bg-danger">缺貨</span>')
-    elif stock <= 5:
-        alerts.append('<span class="alert-tag bg-warning">低量</span>')
-        
-    warranty_status, _ = check_warranty_status(row.get('WarrantyEnd'))
-    if warranty_status == "已過期":
-        alerts.append('<span class="alert-tag bg-danger">過保</span>')
-    elif warranty_status == "即將到期":
-        alerts.append('<span class="alert-tag bg-warning">保固快到</span>')
     
-    alert_html = "".join(alerts)
+    dot_class = "dot-green"
+    if stock == 0: dot_class = "dot-red"
+    elif stock <= 5: dot_class = "dot-orange"
     
-    # 3. 欄位
+    # 欄位
     sku = row['SKU']
-    category = row['Category']
     name = row['Name']
+    cat = row['Category']
     loc = row['Location'] if row['Location'] else "未設定"
-    sn = row['SN'] if row['SN'] else "-"
-
-    # 4. HTML 組裝 (保持靠左對齊)
+    
+    # HTML (靠左對齊，無縮排)
     html = f"""<div class="glass-card">
-<div class="img-container">
+<div class="img-box">
 {img_html}
 </div>
-<div class="content-area">
-<div class="card-header">
-<span class="item-name">{name}</span>
-{alert_html}
+<div class="content-box">
+<div class="item-title">
+<span class="status-dot {dot_class}"></span>
+{name}
 </div>
 <div style="margin-bottom:8px;">
-<span class="badge badge-sku">{sku}</span>
-<span class="badge badge-cat">{category}</span>
+<span class="pill pill-sku">{sku}</span>
+<span class="pill pill-cat">{cat}</span>
 </div>
-<div class="meta-info">
-<span class="meta-item">📍 {loc}</span>
-<span class="meta-item">#️⃣ {sn}</span>
+<div style="font-size:0.85rem; color:#666;">
+📍 {loc} &nbsp; <span style="opacity:0.3">|</span> &nbsp; # {row.get('SN','-')}
 </div>
 </div>
-<div class="stock-display">
+<div class="stock-area">
 <div class="stock-val">{stock}</div>
-<div class="stock-txt">In Stock</div>
+<div class="stock-lbl">Stock</div>
 </div>
 </div>"""
-    
+
     st.markdown(html, unsafe_allow_html=True)
 
 def page_search():
@@ -680,7 +651,7 @@ def page_search():
         st.info("無符合資料")
     else:
         for index, row in result.iterrows():
-            render_nordic_card(row)
+            render_glass_card(row)
 
 def page_warranty_management():
     """🆕 保固管理頁面"""
@@ -875,21 +846,53 @@ def page_maintenance():
                 st.error("Code 與 Name 為必填。")
 
     with tabs[1]:
-        st.caption("直接修改表格內容。")
+        st.caption("💡 提示：點選左側方框選取列後按 Delete 鍵可刪除資料。")
         df = load_data()
+        
+        # 1. 記錄原始的 SKU 清單，用來比對誰被刪除了
+        original_skus = set(df["SKU"].astype(str).tolist()) if not df.empty else set()
+
         col_config = {
-            "SKU": st.column_config.TextColumn("SKU", disabled=True),
+            "SKU": st.column_config.TextColumn("SKU", disabled=True), # SKU 不可改，作為索引
             "WarrantyStart": st.column_config.DateColumn("保固開始"),
             "WarrantyEnd": st.column_config.DateColumn("保固結束"),
             "ImageFile": st.column_config.ImageColumn("圖片"),
         }
-        edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="data_editor_main", column_config=col_config)
-        if st.button("儲存變更", type="primary"):
-            with st.spinner("同步中..."):
+        
+        # 開啟 num_rows="dynamic" 讓使用者可以刪除列
+        edited = st.data_editor(
+            df, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key="data_editor_main", 
+            column_config=col_config
+        )
+        
+        if st.button("儲存變更 (包含刪除)", type="primary"):
+            with st.spinner("正在同步資料庫..."):
+                # 2. 取得編輯後的 SKU 清單
+                current_skus = set(edited["SKU"].astype(str).tolist()) if not edited.empty else set()
+                
+                # 3. 找出「消失」的 SKU (原始有，但現在沒有的) -> 執行刪除
+                deleted_skus = original_skus - current_skus
+                
+                # 執行刪除
+                del_count = 0
+                for del_sku in deleted_skus:
+                    if del_sku and del_sku != "nan":
+                        db.collection(COLLECTION_products).document(del_sku).delete()
+                        del_count += 1
+                
+                # 執行更新
+                upd_count = 0
                 for i, row in edited.iterrows():
-                    if row['SKU']: save_data_row(row)
-            st.success("✅ 已更新。")
+                    if row['SKU']: 
+                        save_data_row(row)
+                        upd_count += 1
+                        
+            st.success(f"✅ 同步完成！更新 {upd_count} 筆，刪除 {del_count} 筆。")
             time.sleep(1)
+            st.cache_data.clear() # 清除快取
             st.rerun()
 
     with tabs[2]:
