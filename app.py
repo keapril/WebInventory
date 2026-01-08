@@ -78,314 +78,201 @@ except Exception as e:
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
 
-# --- 3. SaaS / 雜誌文青風 CSS ---
+# --- 3. UI 設計：北歐極簡風 (Nordic UI) ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
 
     :root {
-        --bg-color: #FFFFFF;
-        --sidebar-bg: #F8F9FA;
-        --text-primary: #2C2C2C;
-        --text-secondary: #666666;
-        --accent-color: #111111; 
-        --border-color: #EEEEEE;
-        --warning-color: #F59E0B;
-        --danger-color: #EF4444;
-        --success-color: #10B981;
-        --font-serif: 'Playfair Display', 'Noto Sans TC', serif;
-        --font-sans: 'Inter', 'Noto Sans TC', sans-serif;
+        --bg-color: #F9FAFB;        /* 極淡灰背景，減少眼睛疲勞 */
+        --card-bg: #FFFFFF;         /* 純白卡片 */
+        --text-main: #1F2937;       /* 深灰主字體，非純黑 */
+        --text-sub: #6B7280;        /* 淺灰次要字體 */
+        --accent: #3B82F6;          /* 科技藍 (用於強調) */
+        --border-radius: 16px;      /* 大圓角 */
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --font-base: 'Inter', 'Noto Sans TC', sans-serif;
     }
 
+    /* 全站基礎設定 */
     .stApp {
         background-color: var(--bg-color);
-        color: var(--text-primary);
-        font-family: var(--font-sans);
+        color: var(--text-main);
+        font-family: var(--font-base);
     }
-
+    
+    /* 側邊欄優化 */
     section[data-testid="stSidebar"] {
-        background-color: var(--sidebar-bg);
-        border-right: 1px solid var(--border-color);
-        padding-top: 20px;
-    }
-    section[data-testid="stSidebar"] .stRadio label {
-        color: var(--text-secondary);
-        font-size: 0.95rem;
-        padding: 8px 0;
-        font-family: var(--font-sans);
-        font-weight: 500;
+        background-color: #FFFFFF;
+        border-right: 1px solid #E5E7EB;
     }
     .sidebar-brand {
-        font-family: var(--font-serif);
-        font-size: 1.3rem;
+        font-family: var(--font-base);
+        font-size: 1.1rem;
         font-weight: 700;
-        color: var(--text-primary);
-        margin-bottom: 30px;
-        letter-spacing: 1px;
-    }
-
-    h1 {
-        font-family: var(--font-serif) !important;
-        font-weight: 700 !important;
-        color: var(--text-primary) !important;
-        font-size: 2rem !important;
-        letter-spacing: 0.5px;
-        margin-bottom: 1.5rem !important;
-    }
-    h2, h3 {
-        font-family: var(--font-sans) !important;
-        font-weight: 500 !important;
-        color: var(--text-primary) !important;
-        letter-spacing: 0.5px;
-    }
-    h2 { font-size: 1.3rem !important; margin-top: 1.5rem !important; }
-    h3 { font-size: 1.1rem !important; color: var(--text-secondary) !important; }
-    
-    p, label, .stMarkdown {
-        color: var(--text-secondary);
-        font-size: 0.9rem !important;
-        line-height: 1.6;
-        font-weight: 400;
-    }
-
-    div[data-testid="stMetric"] {
-        background-color: #fff;
+        color: var(--text-main);
         padding: 10px 0;
-        border-bottom: 1px solid var(--border-color);
-    }
-    div[data-testid="stMetricLabel"] {
-        color: #999 !important;
-        font-size: 0.8rem !important;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    div[data-testid="stMetricValue"] {
-        color: var(--text-primary) !important;
-        font-family: var(--font-serif) !important;
-        font-size: 1.8rem !important;
-        font-weight: 500;
+        letter-spacing: 0.5px;
     }
 
-    div.stButton > button {
-        background-color: transparent;
-        color: var(--text-primary);
-        border: 1px solid #DDDDDD;
-        border-radius: 2px;
-        font-size: 0.9rem;
-        font-weight: 400;
-        padding: 0.5rem 1.2rem;
-        box-shadow: none;
-        transition: all 0.3s ease;
-        font-family: var(--font-sans);
-    }
-    div.stButton > button:hover {
-        border-color: var(--text-primary);
-        background-color: var(--text-primary);
-        color: #fff;
+    /* 標題優化 */
+    h1, h2, h3 {
+        font-family: var(--font-base) !important;
+        font-weight: 600 !important;
+        color: var(--text-main) !important;
+        letter-spacing: -0.025em;
     }
     
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        border-radius: 2px;
-        border: 1px solid #EEEEEE;
-        background-color: #FAFAFA;
-        color: var(--text-primary);
-        font-size: 0.9rem;
-        padding: 8px 12px;
-    }
-    .stTextInput input:focus {
-        border-color: #999;
-        background-color: #fff;
-        box-shadow: none;
+    /* 修正：讓 Header (漢堡選單) 回歸，但背景透明化 */
+    header[data-testid="stHeader"] {
+        background-color: transparent;
     }
 
-    /* 警示區塊 */
-    .alert-box {
-        background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-        border-left: 4px solid #F59E0B;
-        padding: 16px 20px;
-        border-radius: 4px;
-        margin: 20px 0;
-        font-family: var(--font-sans);
+    /* 卡片設計 (Nordic Card) */
+    .nordic-card {
+        background: var(--card-bg);
+        border-radius: var(--border-radius);
+        padding: 24px;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow-sm);
+        border: 1px solid #F3F4F6;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 20px;
     }
-    .alert-box.critical {
-        background: linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%);
-        border-left-color: #DC2626;
+    .nordic-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+        border-color: #E5E7EB;
     }
-    .alert-box-title {
+    
+    /* 圖片樣式 */
+    .card-img-box {
+        width: 72px;
+        height: 72px;
+        border-radius: 12px;
+        overflow: hidden;
+        background-color: #F3F4F6;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .card-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    /* 內容排版 */
+    .card-content {
+        flex-grow: 1;
+    }
+    .card-title {
         font-size: 1rem;
         font-weight: 600;
-        color: #78350F;
-        margin-bottom: 8px;
+        color: var(--text-main);
+        margin-bottom: 4px;
         display: flex;
         align-items: center;
         gap: 8px;
     }
-    .alert-box.critical .alert-box-title {
-        color: #7F1D1D;
-    }
-    .alert-box-content {
+    .card-meta {
         font-size: 0.85rem;
-        color: #92400E;
-        line-height: 1.6;
+        color: var(--text-sub);
+        font-weight: 400;
     }
-    .alert-box.critical .alert-box-content {
-        color: #991B1B;
-    }
-
-    /* 警示標籤 */
-    .alert-badge {
-        display: inline-block;
-        padding: 4px 8px;
-        border-radius: 2px;
+    
+    /* 標籤 (Pill Badges) */
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 10px;
+        border-radius: 99px;
         font-size: 0.75rem;
         font-weight: 500;
-        margin-left: 8px;
+        white-space: nowrap;
     }
-    .alert-low { background: #FEE2E2; color: #DC2626; }
-    .alert-warning { background: #FEF3C7; color: #D97706; }
-    .alert-expired { background: #DBEAFE; color: #2563EB; }
+    .pill-gray { background: #F3F4F6; color: #4B5563; }
+    .pill-red { background: #FEF2F2; color: #DC2626; }
+    .pill-yellow { background: #FFFBEB; color: #D97706; }
+    .pill-blue { background: #EFF6FF; color: #2563EB; }
 
-    /* 保固到期清單 */
-    .warranty-item {
-        background: white;
-        border: 1px solid #F0F0F0;
-        border-radius: 4px;
-        padding: 12px 16px;
-        margin-bottom: 8px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        transition: all 0.2s;
-    }
-    .warranty-item:hover {
-        border-color: #D1D5DB;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .warranty-item-left {
-        flex-grow: 1;
-    }
-    .warranty-item-name {
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: var(--text-primary);
-        margin-bottom: 4px;
-    }
-    .warranty-item-meta {
-        font-size: 0.8rem;
-        color: #6B7280;
-    }
-    .warranty-item-date {
-        text-align: right;
-        font-family: var(--font-serif);
-    }
-    .warranty-days {
-        font-size: 1.2rem;
-        font-weight: 600;
-        color: #DC2626;
-    }
-    .warranty-label {
-        font-size: 0.7rem;
-        color: #9CA3AF;
-        text-transform: uppercase;
-    }
-
-    .magazine-card {
-        border-bottom: 1px solid #F0F0F0;
-        padding: 20px 0;
-        display: flex;
-        gap: 20px;
-        align-items: center;
-        transition: opacity 0.2s;
-    }
-    .magazine-card:hover {
-        opacity: 0.8;
-    }
-    .magazine-img {
-        width: 80px;
-        height: 80px;
-        background-color: #F5F5F5;
-        object-fit: cover;
-        flex-shrink: 0;
-    }
-    .magazine-content {
-        flex-grow: 1;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-    .magazine-title {
-        font-family: var(--font-sans);
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--text-primary);
-        margin-bottom: 4px;
-    }
-    .magazine-meta {
-        font-family: var(--font-sans);
-        font-size: 0.8rem;
-        color: #888;
-        display: flex;
-        gap: 12px;
-        margin-bottom: 2px;
-        font-weight: 400;
-    }
-    .magazine-tag {
-        border: 1px solid #EEE;
-        padding: 1px 6px;
-        border-radius: 2px;
-        font-size: 0.75rem;
-        color: #666;
-    }
-    .magazine-stock {
-        font-family: var(--font-serif);
-        font-size: 1.2rem;
-        color: var(--text-primary);
+    /* 庫存數字 */
+    .stock-box {
         text-align: right;
         min-width: 60px;
-        font-weight: 400;
+    }
+    .stock-num {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-main);
+        line-height: 1;
     }
     .stock-label {
-        font-size: 0.7rem;
-        color: #AAA;
-        text-transform: uppercase;
-        display: block;
-        text-align: right;
-        letter-spacing: 1px;
+        font-size: 0.75rem;
+        color: var(--text-sub);
+        margin-top: 4px;
     }
 
-    button[data-baseweb="tab"] {
-        font-family: var(--font-sans);
-        font-size: 0.9rem;
-        font-weight: 400;
-        color: #888;
-        border-radius: 0;
-        padding: 0 16px 8px 16px;
+    /* 輸入框美化 */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        border-radius: 12px;
+        border: 1px solid #E5E7EB;
+        background-color: #FFFFFF;
+        padding: 10px 14px;
+        color: var(--text-main);
+    }
+    .stTextInput input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+    
+    /* 按鈕美化 */
+    div.stButton > button {
+        border-radius: 12px;
+        border: 1px solid #E5E7EB;
+        background-color: #FFFFFF;
+        color: var(--text-main);
+        font-weight: 500;
+        padding: 0.5rem 1.2rem;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.2s;
+    }
+    div.stButton > button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background-color: #EFF6FF;
+    }
+    div.stButton > button[kind="primary"] {
+        background-color: var(--text-main);
+        color: white;
         border: none;
-        background: transparent;
     }
-    button[data-baseweb="tab"][aria-selected="true"] {
-        color: var(--text-primary);
-        border-bottom: 1px solid var(--text-primary);
-        font-weight: 600;
+
+    /* Metrics 優化 */
+    div[data-testid="stMetric"] {
+        background-color: #FFFFFF;
+        padding: 16px;
+        border-radius: 16px;
+        border: 1px solid #F3F4F6;
+        box-shadow: var(--shadow-sm);
     }
-    div[data-baseweb="tab-list"] {
-        gap: 16px;
-        border-bottom: 1px solid #F0F0F0;
-        margin-bottom: 24px;
+    div[data-testid="stMetricLabel"] {
+        color: var(--text-sub) !important;
+        font-size: 0.85rem !important;
+    }
+    div[data-testid="stMetricValue"] {
+        color: var(--text-main) !important;
+        font-size: 1.6rem !important;
     }
     
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    
+    /* 去除頂部與底部多餘間距 */
     .block-container {
-        padding-top: 1rem;
-        padding-bottom: 2rem;
-    }
-    
-    hr {
-        margin: 2rem 0;
-        border: none;
-        border-top: 1px solid #F0F0F0;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -669,51 +556,67 @@ def main():
     elif page == "異動紀錄": page_reports()
     elif page == "保固管理": page_warranty_management()  # 🆕
 
-def render_magazine_card(row):
-    """渲染雜誌風格列表項目"""
+def render_nordic_card(row):
+    """渲染北歐風卡片"""
     img_url = row.get('ImageFile', '')
     has_img = img_url and str(img_url).startswith("http")
     
-    img_tag = f'<img src="{img_url}" class="magazine-img">' if has_img else '<div class="magazine-img" style="display:flex;align-items:center;justify-content:center;color:#ccc;font-size:0.7rem;">無圖片</div>'
+    # 圖片區塊
+    if has_img:
+        img_html = f'<img src="{img_url}" class="card-img">'
+    else:
+        # 無圖片時顯示簡約的 Placeholder
+        img_html = '<span style="color:#9CA3AF;font-size:0.8rem;">No Img</span>'
     
+    # 庫存與顏色邏輯
     stock = int(row['Stock'])
-    stock_color = "#111" if stock > 5 else "#B91C1C" 
+    stock_class = "pill-gray"
+    if stock == 0: stock_class = "pill-red"
+    elif stock <= 5: stock_class = "pill-yellow"
     
-    # 警示標籤
-    alerts = []
+    # 標籤生成
+    badges = []
+    
+    # 庫存標籤 (只在低庫存顯示文字，保持版面乾淨)
     stock_level = get_stock_alert_level(stock)
-    if stock_level == "無庫存":
-        alerts.append('<span class="alert-badge alert-low">無庫存</span>')
-    elif stock_level in ["極低", "偏低"]:
-        alerts.append(f'<span class="alert-badge alert-warning">{stock_level}</span>')
+    if stock_level in ["無庫存", "極低", "偏低"]:
+        badges.append(f'<span class="status-pill {stock_class}">{stock_level}</span>')
     
-    warranty_status, days = check_warranty_status(row.get('WarrantyEnd'))
+    # 保固標籤
+    warranty_status, _ = check_warranty_status(row.get('WarrantyEnd'))
     if warranty_status == "已過期":
-        alerts.append('<span class="alert-badge alert-expired">保固過期</span>')
+        badges.append('<span class="status-pill pill-red">保固過期</span>')
     elif warranty_status == "即將到期":
-        alerts.append('<span class="alert-badge alert-warning">保固將到期</span>')
+        badges.append('<span class="status-pill pill-yellow">保固注意</span>')
+        
+    badges_html = "".join(badges)
     
-    alert_html = "".join(alerts)
-    
-    loc = row['Location'] if row['Location'] else "-"
+    # 處理空值顯示
+    loc = row['Location'] if row['Location'] else "未設定"
     sn = row['SN'] if row['SN'] else "-"
     
     html = f"""
-    <div class="magazine-card">
-        {img_tag}
-        <div class="magazine-content">
-            <div class="magazine-title">{row['Name']} {alert_html}</div>
-            <div class="magazine-meta">
-                <span class="magazine-tag">{row['SKU']}</span>
+    <div class="nordic-card">
+        <div class="card-img-box">
+            {img_html}
+        </div>
+        <div class="card-content">
+            <div class="card-title">
+                {row['Name']} 
+                {badges_html}
+            </div>
+            <div class="card-meta">
+                <span class="status-pill pill-gray" style="margin-right:8px;">{row['SKU']}</span>
                 <span>{row['Category']}</span>
             </div>
-            <div class="magazine-meta">
-                位置: {loc} &nbsp;|&nbsp; 序號: {sn}
+            <div class="card-meta" style="margin-top:6px;">
+                <span style="color:#9CA3AF;">📍</span> {loc} &nbsp;&nbsp; 
+                <span style="color:#9CA3AF;">#</span> {sn}
             </div>
         </div>
-        <div>
-            <span class="stock-label">庫存</span>
-            <div class="magazine-stock" style="color:{stock_color}">{stock}</div>
+        <div class="stock-box">
+            <div class="stock-num">{stock}</div>
+            <div class="stock-label">Stock</div>
         </div>
     </div>
     """
@@ -814,7 +717,7 @@ def page_search():
         st.info("無符合資料")
     else:
         for index, row in result.iterrows():
-            render_magazine_card(row)
+            render_nordic_card(row)
 
 def page_warranty_management():
     """🆕 保固管理頁面"""
