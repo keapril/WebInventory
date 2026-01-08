@@ -69,7 +69,7 @@ db = firestore.client(app=firebase_app)
 try:
     bucket = storage.bucket(name=CUSTOM_BUCKET_NAME)
 except Exception as e:
-    pass # 忽略 storage 錯誤，因為主要使用 R2
+    pass 
 
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
@@ -80,11 +80,11 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
 
     :root {
-        --primary-color: #2563EB;   /* 專業藍 (Royal Blue) */
-        --bg-color: #F3F4F6;        /* 淺灰底色，保護眼睛 */
+        --primary-color: #2563EB;   /* 專業藍 */
+        --bg-color: #F3F4F6;        /* 淺灰底色 */
         --card-bg: #FFFFFF;         /* 純白卡片 */
-        --text-main: #111827;       /* 深灰幾近黑 */
-        --text-sub: #6B7280;        /* 次要文字灰 */
+        --text-main: #111827;       /* 深灰 */
+        --text-sub: #6B7280;        /* 次要灰 */
         --border-color: #E5E7EB;    /* 邊框灰 */
         --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         --font-family: 'Inter', 'Noto Sans TC', sans-serif;
@@ -97,7 +97,6 @@ st.markdown("""
         font-family: var(--font-family);
     }
     
-    /* 側邊欄優化 - 乾淨俐落 */
     section[data-testid="stSidebar"] {
         background-color: #FFFFFF;
         border-right: 1px solid var(--border-color);
@@ -114,22 +113,18 @@ st.markdown("""
         gap: 10px;
     }
 
-    /* 標題與文字 */
     h1, h2, h3 {
         font-family: var(--font-family) !important;
         color: var(--text-main) !important;
         font-weight: 600 !important;
         letter-spacing: -0.025em;
     }
-    p, label {
-        color: var(--text-main);
-    }
 
-    /* SaaS 卡片設計 (Table Row Style) */
+    /* SaaS 卡片設計 */
     .saas-card {
         background-color: var(--card-bg);
         border: 1px solid var(--border-color);
-        border-radius: 8px; /* 標準圓角 */
+        border-radius: 8px;
         padding: 16px;
         margin-bottom: 12px;
         box-shadow: var(--shadow-sm);
@@ -142,7 +137,6 @@ st.markdown("""
         border-color: var(--primary-color);
     }
 
-    /* 圖片縮圖 */
     .saas-thumb {
         width: 64px;
         height: 64px;
@@ -165,29 +159,19 @@ st.markdown("""
         flex-shrink: 0;
     }
 
-    /* 內容區塊 */
     .saas-content {
         flex-grow: 1;
         display: grid;
-        grid-template-columns: 2fr 1.5fr 1.5fr; /* 網格佈局 */
+        grid-template-columns: 2fr 1.5fr 1.5fr;
         gap: 12px;
         align-items: center;
     }
     
-    /* 第一欄：名稱與 SKU */
-    .col-main {
-        display: flex;
-        flex-direction: column;
-    }
-    .item-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--text-main);
-        margin-bottom: 4px;
-    }
+    .col-main { display: flex; flex-direction: column; }
+    .item-title { font-size: 1rem; font-weight: 600; color: var(--text-main); margin-bottom: 4px; }
     .item-sku {
         font-size: 0.8rem;
-        font-family: monospace; /* 等寬字體顯示編號 */
+        font-family: monospace;
         color: var(--text-sub);
         background: #F3F4F6;
         padding: 2px 6px;
@@ -196,32 +180,12 @@ st.markdown("""
         width: fit-content;
     }
 
-    /* 第二欄：分類與位置 */
-    .col-meta {
-        font-size: 0.85rem;
-        color: var(--text-sub);
-    }
-    .meta-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 2px;
-    }
+    .col-meta { font-size: 0.85rem; color: var(--text-sub); }
+    .meta-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
 
-    /* 第三欄：庫存狀態 */
-    .col-stock {
-        text-align: right;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-    }
-    .stock-number {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--text-main);
-    }
+    .col-stock { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+    .stock-number { font-size: 1.25rem; font-weight: 600; color: var(--text-main); }
     
-    /* 狀態標籤 (Badges) */
     .status-badge {
         font-size: 0.75rem;
         padding: 2px 8px;
@@ -235,7 +199,6 @@ st.markdown("""
     .badge-warning { background: #FFFBEB; color: #D97706; border: 1px solid #FEF3C7; }
     .badge-danger { background: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
     
-    /* Streamlit 元件優化 */
     div.stButton > button {
         border-radius: 6px;
         font-weight: 500;
@@ -258,12 +221,11 @@ st.markdown("""
         background: #1D4ED8;
     }
     
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
         border-radius: 6px;
         border-color: #D1D5DB;
     }
     
-    /* 移除多餘邊距 */
     .block-container { padding-top: 2rem; }
     </style>
     """, unsafe_allow_html=True)
@@ -292,10 +254,11 @@ def load_data():
                 "Location": d.get("location", ""),
                 "SN": d.get("sn", ""),
                 "WarrantyStart": d.get("warrantyStart", ""),
-                "WarrantyEnd": d.get("warrantyEnd", "")
+                "WarrantyEnd": d.get("warrantyEnd", ""),
+                "Accessories": d.get("accessories", "") # 🆕 新增配件欄位
             })
         
-        default_cols = ["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock", "Location", "SN", "WarrantyStart", "WarrantyEnd"]
+        default_cols = ["SKU", "Code", "Category", "Number", "Name", "ImageFile", "Stock", "Location", "SN", "WarrantyStart", "WarrantyEnd", "Accessories"]
         if not data: return pd.DataFrame(columns=default_cols)
         df = pd.DataFrame(data)
         for col in default_cols:
@@ -352,6 +315,7 @@ def save_data_row(row_data):
         "sn": str(row_data.get("SN", "")),
         "warrantyStart": ws,
         "warrantyEnd": we,
+        "accessories": str(row_data.get("Accessories", "")), # 🆕 儲存配件
         "updatedAt": firestore.SERVER_TIMESTAMP
     }
     db.collection(COLLECTION_products).document(sku).set(data_dict, merge=True)
@@ -380,7 +344,6 @@ def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
     """Cloudflare R2 上傳邏輯"""
     if uploaded_file is None: return None
     
-    # 優先嘗試讀取 Cloudflare 設定
     try:
         r2_conf = st.secrets["cloudflare"]
         endpoint = r2_conf["endpoint"]
@@ -389,7 +352,6 @@ def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
         bucket_name = r2_conf["bucket_name"]
         public_domain = r2_conf["public_domain"]
         
-        # 1. 圖片壓縮
         image = Image.open(uploaded_file)
         if image.mode in ("RGBA", "P"): image = image.convert("RGB")
         max_width = 800
@@ -401,7 +363,6 @@ def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
         image.save(img_byte_arr, format='JPEG', quality=80)
         img_byte_arr.seek(0)
 
-        # 2. R2 上傳
         s3_client = boto3.client(
             's3',
             endpoint_url=endpoint,
@@ -420,7 +381,6 @@ def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
         return f"{public_domain}/{file_name}"
         
     except Exception as e:
-        # 如果沒有設定 Cloudflare，嘗試 fallback 到 Firebase Storage (為了相容性)
         try:
             target_bucket = bucket_override if bucket_override else bucket
             safe_sku = "".join([c for c in sku if c.isalnum() or c in ('-','_')])
@@ -476,7 +436,6 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # 保固到期提醒
     df = load_data()
     warranty_alerts = get_warranty_alerts(df)
     
@@ -492,8 +451,6 @@ def main():
                     <div style='font-size:0.75rem; color:#6B7280;'>{alert['SKU']} · {day_text}</div>
                 </div>
                 """, unsafe_allow_html=True)
-
-    # 🔧 連線診斷已移除
 
     menu_options = [
         "總覽與查詢", 
@@ -526,7 +483,6 @@ def render_saas_card(row):
     try: stock = int(row['Stock'])
     except: stock = 0
     
-    # 狀態標籤
     status_html = ""
     if stock == 0:
         status_html += '<span class="status-badge badge-danger">缺貨</span>'
@@ -540,6 +496,13 @@ def render_saas_card(row):
     if not status_html:
         status_html = '<span class="status-badge badge-success">正常</span>'
 
+    # 顯示部分配件資訊 (若有)
+    acc = row.get('Accessories', '')
+    acc_html = ""
+    if acc:
+        acc_short = (acc[:15] + '...') if len(acc) > 15 else acc
+        acc_html = f'<div class="meta-row" style="color:#6B7280; font-size:0.8rem; margin-top:4px;"><span>🔩</span> {acc_short}</div>'
+
     html = f"""<div class="saas-card">
 {img_html}
 <div class="saas-content">
@@ -550,6 +513,7 @@ def render_saas_card(row):
 <div class="col-meta">
     <div class="meta-row"><span>📁</span> {row['Category']}</div>
     <div class="meta-row"><span>📍</span> {row['Location'] if row['Location'] else '-'}</div>
+    {acc_html}
 </div>
 <div class="col-stock">
     <div class="stock-number">{stock}</div>
@@ -578,7 +542,7 @@ def page_search():
         filter_location = fc2.multiselect("地點", options=df['Location'].unique().tolist())
         filter_stock = fc3.selectbox("庫存狀態", ["全部", "正常", "低庫存", "無庫存"])
     
-    search_term = st.text_input("搜尋", placeholder="輸入名稱或 SKU...")
+    search_term = st.text_input("搜尋", placeholder="輸入名稱、SKU 或配件關鍵字...")
     
     result = df.copy()
     if filter_category: result = result[result['Category'].isin(filter_category)]
@@ -587,6 +551,7 @@ def page_search():
     elif filter_stock == "無庫存": result = result[result['Stock'] == 0]
     
     if search_term:
+        # 搜尋範圍也加入配件欄位
         mask = result.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
         result = result[mask]
     
@@ -660,22 +625,36 @@ def page_maintenance():
             name = c4.text_input("Name")
             c5, c6 = st.columns(2)
             sn = c5.text_input("S/N")
-            loc = c6.text_input("Location")
             
-            enable_w = st.checkbox("啟用保固")
-            if enable_w:
-                w1, w2 = st.columns(2)
-                ws = w1.date_input("開始")
-                we = w2.date_input("結束")
-            else: ws, we = None, None
+            # 🆕 1. 地點改為下拉選單
+            loc_options = ["北", "中", "南", "醫院"]
+            selected_loc = c6.selectbox("地點", loc_options)
+            
+            # 🆕 2. 保固改為合約保固日
+            st.markdown("#### 合約保固日")
+            w1, w2 = st.columns(2)
+            ws = w1.date_input("開始日期", value=None)
+            we = w2.date_input("結束日期", value=None)
+            
+            # 🆕 3. 新增配件欄位
+            st.markdown("#### 儀器箱配件")
+            accessories = st.text_area("配件類型及數量", placeholder="例如: 電源線x1, 傳輸線x2...", height=68)
             
             stock = st.number_input("Stock", 0, value=1)
+            
+            # 醫院名稱處理
+            hosp_input = ""
+            if selected_loc == "醫院":
+                hosp_input = st.text_input("請輸入醫院名稱")
+
             if st.form_submit_button("新增"):
+                final_loc = f"醫院-{hosp_input}" if selected_loc == "醫院" and hosp_input else selected_loc
                 sku = f"{code}-{cat}-{num}"
                 save_data_row({
                     "SKU":sku, "Code":code, "Category":cat, "Number":num, 
-                    "Name":name, "SN":sn, "Location":loc, "Stock":stock,
-                    "WarrantyStart": ws, "WarrantyEnd": we
+                    "Name":name, "SN":sn, "Location":final_loc, "Stock":stock,
+                    "WarrantyStart": ws, "WarrantyEnd": we,
+                    "Accessories": accessories
                 })
                 st.success(f"已新增: {sku}")
 
@@ -686,8 +665,9 @@ def page_maintenance():
 
         col_config = {
             "SKU": st.column_config.TextColumn("SKU", disabled=True),
-            "WarrantyStart": st.column_config.DateColumn("保固開始"),
-            "WarrantyEnd": st.column_config.DateColumn("保固結束"),
+            "WarrantyStart": st.column_config.DateColumn("合約保固起"),
+            "WarrantyEnd": st.column_config.DateColumn("合約保固迄"),
+            "Accessories": st.column_config.TextColumn("儀器箱配件", width="large"),
             "ImageFile": st.column_config.ImageColumn("圖片"),
         }
         
@@ -735,7 +715,7 @@ def page_maintenance():
     with tabs[3]:
         up_csv = st.file_uploader("CSV", type=["csv"])
         if up_csv:
-            df_im = pd.read_csv(up_csv) # 簡化版讀取，建議自行處理編碼
+            df_im = pd.read_csv(up_csv)
             if st.button("匯入 CSV"):
                 for i, r in df_im.iterrows():
                     save_data_row(r)
