@@ -5,6 +5,8 @@ import io
 import json
 import time
 import requests
+import boto3
+from botocore.exceptions import NoCredentialsError
 from PIL import Image
 from datetime import datetime, timedelta, timezone, date
 
@@ -21,10 +23,8 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🔧【設定值】Bucket 名稱
+# 🔧【設定值】Bucket 名稱 (Firebase Fallback)
 # ==========================================
-# 若您使用 Cloudflare R2，請確保您的 secrets.toml 設定正確，
-# 本程式碼預設保留 Firebase 架構，若需 R2 請自行替換 upload 函數。
 CUSTOM_BUCKET_NAME = "product-system-900c4.firebasestorage.app"
 
 # --- 2. Firebase 初始化 ---
@@ -66,228 +66,204 @@ if not firebase_app:
     st.stop()
 
 db = firestore.client(app=firebase_app)
-
 try:
     bucket = storage.bucket(name=CUSTOM_BUCKET_NAME)
 except Exception as e:
-    # 這裡僅顯示錯誤，不阻擋程式執行 (相容 R2 使用者)
-    print(f"Bucket Warning: {e}")
+    pass # 忽略 storage 錯誤，因為主要使用 R2
 
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
 
-# --- 3. UI 設計：專業企業級 SaaS 風格 (Professional SaaS) ---
+# --- 3. UI 設計：專業 SaaS 風格 (Enterprise Clean) ---
 st.markdown("""
     <style>
-    /* 引入現代化無襯線字體 Inter */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
 
     :root {
-        /* SaaS 專業配色系統 */
-        --bg-body: #F3F4F6;        /* 淺灰背景，降低視覺干擾 */
-        --bg-card: #FFFFFF;        /* 純白卡片 */
-        --border-color: #E5E7EB;   /* 細緻邊框 */
-        --text-main: #111827;      /* 深色主字 */
-        --text-sub: #6B7280;       /* 灰色次要字 */
-        --primary: #4F46E5;        /* 專業靛藍 (Indigo) */
-        --primary-hover: #4338CA;
-        --success: #059669;
-        --warning: #D97706;
-        --danger: #DC2626;
+        --primary-color: #2563EB;   /* 專業藍 (Royal Blue) */
+        --bg-color: #F3F4F6;        /* 淺灰底色，保護眼睛 */
+        --card-bg: #FFFFFF;         /* 純白卡片 */
+        --text-main: #111827;       /* 深灰幾近黑 */
+        --text-sub: #6B7280;        /* 次要文字灰 */
+        --border-color: #E5E7EB;    /* 邊框灰 */
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --font-family: 'Inter', 'Noto Sans TC', sans-serif;
     }
 
+    /* 全局設定 */
     .stApp {
-        background-color: var(--bg-body);
+        background-color: var(--bg-color);
         color: var(--text-main);
-        font-family: 'Inter', 'Noto Sans TC', sans-serif;
+        font-family: var(--font-family);
     }
-
-    /* 側邊欄優化 - 簡約白底 */
+    
+    /* 側邊欄優化 - 乾淨俐落 */
     section[data-testid="stSidebar"] {
         background-color: #FFFFFF;
         border-right: 1px solid var(--border-color);
     }
     .sidebar-brand {
-        font-size: 1.1rem;
+        font-size: 1.25rem;
         font-weight: 700;
         color: var(--text-main);
-        padding: 12px 4px;
-        margin-bottom: 12px;
+        padding: 1rem 0;
         border-bottom: 1px solid var(--border-color);
+        margin-bottom: 1.5rem;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
     }
 
-    /* 標題系統 - 精確層級 */
-    h1 {
-        font-size: 1.8rem !important;
-        font-weight: 700 !important;
+    /* 標題與文字 */
+    h1, h2, h3 {
+        font-family: var(--font-family) !important;
         color: var(--text-main) !important;
-        margin-bottom: 1.5rem !important;
+        font-weight: 600 !important;
         letter-spacing: -0.025em;
     }
-    h2 {
-        font-size: 1.25rem !important;
-        font-weight: 600 !important;
-        color: var(--text-main) !important;
-        margin-top: 1rem !important;
-    }
-    h3 {
-        font-size: 1rem !important;
-        font-weight: 600 !important;
-        color: var(--text-sub) !important;
+    p, label {
+        color: var(--text-main);
     }
 
-    /* SaaS 卡片設計 - 清晰邊界 */
+    /* SaaS 卡片設計 (Table Row Style) */
     .saas-card {
-        background: var(--bg-card);
+        background-color: var(--card-bg);
         border: 1px solid var(--border-color);
         border-radius: 8px; /* 標準圓角 */
         padding: 16px;
         margin-bottom: 12px;
+        box-shadow: var(--shadow-sm);
         display: flex;
         align-items: center;
         gap: 16px;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        transition: border-color 0.15s ease-in-out;
     }
     .saas-card:hover {
-        border-color: #D1D5DB;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        border-color: var(--primary-color);
     }
 
-    /* 圖片容器 - 方正略帶圓角 */
-    .img-wrapper {
+    /* 圖片縮圖 */
+    .saas-thumb {
         width: 64px;
         height: 64px;
         border-radius: 6px;
+        background-color: #F9FAFB;
         border: 1px solid var(--border-color);
-        background: #F9FAFB;
-        overflow: hidden;
+        object-fit: cover;
+        flex-shrink: 0;
+    }
+    .saas-thumb-placeholder {
+        width: 64px;
+        height: 64px;
+        border-radius: 6px;
+        background-color: #F3F4F6;
+        color: #9CA3AF;
         display: flex;
         align-items: center;
         justify-content: center;
+        font-size: 1.2rem;
         flex-shrink: 0;
     }
-    .card-img-content {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
 
-    /* 內容排版 */
-    .card-body { flex-grow: 1; }
-    
-    .card-header-row {
-        display: flex;
+    /* 內容區塊 */
+    .saas-content {
+        flex-grow: 1;
+        display: grid;
+        grid-template-columns: 2fr 1.5fr 1.5fr; /* 網格佈局 */
+        gap: 12px;
         align-items: center;
-        justify-content: space-between;
-        margin-bottom: 4px;
     }
-    .item-title-text {
-        font-size: 0.95rem;
+    
+    /* 第一欄：名稱與 SKU */
+    .col-main {
+        display: flex;
+        flex-direction: column;
+    }
+    .item-title {
+        font-size: 1rem;
         font-weight: 600;
         color: var(--text-main);
+        margin-bottom: 4px;
     }
-    
-    /* 專業標籤 (Badges) */
-    .saas-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 2px 8px;
+    .item-sku {
+        font-size: 0.8rem;
+        font-family: monospace; /* 等寬字體顯示編號 */
+        color: var(--text-sub);
+        background: #F3F4F6;
+        padding: 2px 6px;
         border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 500;
-        line-height: 1.2;
+        display: inline-block;
+        width: fit-content;
     }
-    .badge-gray { background: #F3F4F6; color: #4B5563; border: 1px solid #E5E7EB; }
-    .badge-blue { background: #EFF6FF; color: #2563EB; border: 1px solid #DBEAFE; }
-    .badge-red { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
-    .badge-yellow { background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; }
 
-    /* 次要資訊列 */
+    /* 第二欄：分類與位置 */
+    .col-meta {
+        font-size: 0.85rem;
+        color: var(--text-sub);
+    }
     .meta-row {
         display: flex;
         align-items: center;
-        gap: 12px;
-        font-size: 0.8rem;
-        color: var(--text-sub);
+        gap: 6px;
+        margin-bottom: 2px;
     }
-    .meta-item { display: flex; align-items: center; gap: 4px; }
 
-    /* 庫存指標 - 右側獨立區塊 */
-    .stock-indicator {
+    /* 第三欄：庫存狀態 */
+    .col-stock {
         text-align: right;
-        min-width: 80px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
     }
-    .stock-value {
-        font-family: 'Inter', sans-serif;
+    .stock-number {
         font-size: 1.25rem;
         font-weight: 600;
         color: var(--text-main);
-        line-height: 1.2;
     }
-    .stock-caption {
-        font-size: 0.7rem;
-        color: var(--text-sub);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+    
+    /* 狀態標籤 (Badges) */
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 99px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
     }
-
-    /* 輸入框優化 - 標準化 */
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        border-radius: 6px !important;
-        border: 1px solid var(--border-color) !important;
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
-        background-color: #FFFFFF !important;
-        padding: 8px 12px !important;
-        font-size: 0.9rem !important;
-    }
-    .stTextInput input:focus {
-        border-color: var(--primary) !important;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important;
-    }
-
-    /* 按鈕 - 扁平化設計 */
+    .badge-success { background: #ECFDF5; color: #059669; border: 1px solid #D1FAE5; }
+    .badge-warning { background: #FFFBEB; color: #D97706; border: 1px solid #FEF3C7; }
+    .badge-danger { background: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
+    
+    /* Streamlit 元件優化 */
     div.stButton > button {
         border-radius: 6px;
-        border: 1px solid var(--border-color);
-        background-color: #FFFFFF;
-        color: var(--text-main);
         font-weight: 500;
-        font-size: 0.9rem;
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-        transition: all 0.2s;
+        border: 1px solid #D1D5DB;
+        background: white;
+        color: #374151;
+        box-shadow: var(--shadow-sm);
     }
     div.stButton > button:hover {
-        background-color: #F9FAFB;
-        border-color: #D1D5DB;
+        border-color: #9CA3AF;
+        background: #F9FAFB;
+        color: #111;
     }
     div.stButton > button[kind="primary"] {
-        background-color: var(--primary);
+        background: var(--primary-color);
         color: white;
-        border: 1px solid var(--primary);
+        border: none;
     }
     div.stButton > button[kind="primary"]:hover {
-        background-color: var(--primary-hover);
+        background: #1D4ED8;
     }
     
-    /* Metrics 卡片 */
-    div[data-testid="stMetric"] {
-        background-color: #FFFFFF;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        padding: 16px;
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    }
-    
-    /* Alert 區塊優化 */
-    .stAlert {
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
         border-radius: 6px;
-        border: 1px solid transparent;
+        border-color: #D1D5DB;
     }
     
-    /* 修正頂部間距 */
+    /* 移除多餘邊距 */
     .block-container { padding-top: 2rem; }
     </style>
     """, unsafe_allow_html=True)
@@ -343,14 +319,11 @@ def load_log():
         return pd.DataFrame(columns=["Time", "User", "Type", "SKU", "Name", "Quantity", "Note"])
 
 def save_data_row(row_data):
-    """
-    更新或新增單筆資料
-    包含日期欄位的防呆處理 (NaT Fix)
-    """
+    """修正版：增加對空日期 (NaT) 的防呆機制"""
     ws = row_data.get("WarrantyStart")
     we = row_data.get("WarrantyEnd")
     
-    # --- 日期清洗邏輯 ---
+    # --- 🔧 修正：嚴格檢查日期格式 ---
     def clean_date(d):
         if pd.isna(d) or str(d).strip() == "" or str(d).lower() == "nat":
             return ""
@@ -360,12 +333,13 @@ def save_data_row(row_data):
 
     ws = clean_date(ws)
     we = clean_date(we)
+    # -----------------------------------------------
 
     try: stock_val = int(row_data.get("Stock", 0))
     except: stock_val = 0
     
     sku = str(row_data.get("SKU", ""))
-    if not sku: return # 沒有 SKU 不處理
+    if not sku: return
 
     data_dict = {
         "code": str(row_data.get("Code", "")),
@@ -381,6 +355,7 @@ def save_data_row(row_data):
         "updatedAt": firestore.SERVER_TIMESTAMP
     }
     db.collection(COLLECTION_products).document(sku).set(data_dict, merge=True)
+    st.cache_data.clear()
 
 def save_log(entry):
     entry["timestamp"] = firestore.SERVER_TIMESTAMP
@@ -402,15 +377,19 @@ def delete_all_products_logic():
     return count
 
 def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
-    """
-    圖片上傳函數。
-    ⚠️ 如果您使用 Cloudflare R2，請確保這裡使用的是 R2 (boto3) 的版本。
-    這裡預設提供 Firebase Storage 版本，但支援簡單的圖片壓縮。
-    """
+    """Cloudflare R2 上傳邏輯"""
     if uploaded_file is None: return None
+    
+    # 優先嘗試讀取 Cloudflare 設定
     try:
-        # 簡單壓縮邏輯 (如果是使用 boto3/R2，這段邏輯可通用)
-        from io import BytesIO
+        r2_conf = st.secrets["cloudflare"]
+        endpoint = r2_conf["endpoint"]
+        access_key = r2_conf["access_key"]
+        secret_key = r2_conf["secret_key"]
+        bucket_name = r2_conf["bucket_name"]
+        public_domain = r2_conf["public_domain"]
+        
+        # 1. 圖片壓縮
         image = Image.open(uploaded_file)
         if image.mode in ("RGBA", "P"): image = image.convert("RGB")
         max_width = 800
@@ -418,22 +397,41 @@ def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
             ratio = max_width / float(image.width)
             new_height = int(float(image.height) * ratio)
             image = image.resize((max_width, new_height), Image.Resampling.LANCZOS)
-        img_byte_arr = BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=85)
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=80)
         img_byte_arr.seek(0)
-        
-        # 上傳邏輯 (預設 Firebase)
-        target_bucket = bucket_override if bucket_override else bucket
-        safe_sku = "".join([c for c in sku if c.isalnum() or c in ('-','_')])
-        blob_name = f"images/{safe_sku}-{int(time.time())}.jpg"
-        blob = target_bucket.blob(blob_name)
-        blob.upload_from_file(img_byte_arr, content_type='image/jpeg')
-        blob.make_public()
-        return blob.public_url
 
+        # 2. R2 上傳
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key
+        )
+        safe_sku = "".join([c for c in sku if c.isalnum() or c in ('-','_')])
+        file_name = f"images/{safe_sku}-{int(time.time())}.jpg"
+        
+        s3_client.upload_fileobj(
+            img_byte_arr,
+            bucket_name,
+            file_name,
+            ExtraArgs={'ContentType': 'image/jpeg'}
+        )
+        return f"{public_domain}/{file_name}"
+        
     except Exception as e:
-        st.error(f"上傳失敗: {e}")
-        return None
+        # 如果沒有設定 Cloudflare，嘗試 fallback 到 Firebase Storage (為了相容性)
+        try:
+            target_bucket = bucket_override if bucket_override else bucket
+            safe_sku = "".join([c for c in sku if c.isalnum() or c in ('-','_')])
+            blob_name = f"images/{safe_sku}-{int(time.time())}.jpg"
+            blob = target_bucket.blob(blob_name)
+            blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
+            blob.make_public()
+            return blob.public_url
+        except Exception as fb_e:
+            st.error(f"上傳失敗: {e} | {fb_e}")
+            return None
 
 def check_warranty_status(warranty_end):
     if pd.isna(warranty_end): return None, None
@@ -441,12 +439,10 @@ def check_warranty_status(warranty_end):
         end_date = pd.to_datetime(warranty_end)
         today = pd.Timestamp.now()
         days_left = (end_date - today).days
-        
         if days_left < 0: return "已過期", days_left
         elif days_left <= 30: return "即將到期", days_left
         else: return "正常", days_left
-    except:
-        return None, None
+    except: return None, None
 
 def get_stock_alert_level(stock):
     if stock == 0: return "無庫存"
@@ -471,175 +467,156 @@ def get_warranty_alerts(df):
                 })
     return sorted(alerts, key=lambda x: x['DaysLeft'])
 
-# --- 5. UI 渲染函數 (Professional SaaS) ---
-
-def render_saas_card(row):
-    """渲染專業 SaaS 風格卡片"""
-    # 圖片處理
-    img_url = row.get('ImageFile', '')
-    has_img = img_url and str(img_url).startswith("http")
-    
-    if has_img:
-        img_html = f'<img src="{img_url}" class="card-img-content">'
-    else:
-        # 使用極簡的圖標代替
-        img_html = '<div style="color:#9CA3AF;font-size:1.2rem;">📦</div>'
-
-    # 庫存邏輯
-    try: stock = int(row['Stock'])
-    except: stock = 0
-    
-    # 狀態標籤
-    alerts = []
-    if stock == 0:
-        alerts.append('<span class="saas-badge badge-red">Out of Stock</span>')
-    elif stock <= 5:
-        alerts.append('<span class="saas-badge badge-yellow">Low Stock</span>')
-        
-    warranty_status, _ = check_warranty_status(row.get('WarrantyEnd'))
-    if warranty_status == "已過期":
-        alerts.append('<span class="saas-badge badge-red">Expired</span>')
-    elif warranty_status == "即將到期":
-        alerts.append('<span class="saas-badge badge-yellow">Expiring Soon</span>')
-    
-    alert_html = "".join(alerts)
-    
-    # 資料欄位
-    sku = row['SKU']
-    name = row['Name']
-    cat = row['Category']
-    loc = row['Location'] if row['Location'] else "N/A"
-    sn = row['SN'] if row['SN'] else "-"
-    
-    # HTML 組裝 (靠左對齊，無縮排)
-    html = f"""<div class="saas-card">
-<div class="img-wrapper">
-{img_html}
-</div>
-<div class="card-body">
-<div class="card-header-row">
-<span class="item-title-text">{name}</span>
-<div>{alert_html}</div>
-</div>
-<div style="margin-bottom:6px;">
-<span class="saas-badge badge-blue">{sku}</span>
-<span class="saas-badge badge-gray">{cat}</span>
-</div>
-<div class="meta-row">
-<span class="meta-item">📍 {loc}</span>
-<span style="color:#E5E7EB">|</span>
-<span class="meta-item"># {sn}</span>
-</div>
-</div>
-<div class="stock-indicator">
-<div class="stock-value" style="color:{'#DC2626' if stock==0 else '#111827'}">{stock}</div>
-<div class="stock-caption">Stock</div>
-</div>
-</div>"""
-
-    st.markdown(html, unsafe_allow_html=True)
-
-# --- 6. 主程式介面 ---
+# --- 5. 主程式介面 ---
 
 def main():
-    # 側邊欄 Logo 與標題
     st.sidebar.markdown("""
-    <div class="sidebar-brand">
-        <span style="font-size:1.4rem;">📦</span> WebInventory
+    <div class='sidebar-brand'>
+        <span>📦</span> WebInventory
     </div>
     """, unsafe_allow_html=True)
     
-    # ⚠️ 保固提醒 (側邊欄)
+    # 保固到期提醒
     df = load_data()
     warranty_alerts = get_warranty_alerts(df)
     
     if warranty_alerts:
-        with st.sidebar.expander(f"🔔 Notifications ({len(warranty_alerts)})", expanded=True):
+        with st.sidebar.expander(f"⚠️ 保固提醒 ({len(warranty_alerts)})", expanded=True):
             for alert in warranty_alerts[:5]:
                 days = alert['DaysLeft']
                 color = "#DC2626" if days < 0 else "#D97706"
-                msg = f"Overdue {abs(days)} days" if days < 0 else f"Expires in {days} days"
+                day_text = f"過期 {abs(days)} 天" if days < 0 else f"剩 {days} 天"
                 st.markdown(f"""
                 <div style='padding:8px 0; border-bottom:1px solid #F3F4F6;'>
                     <div style='font-size:0.85rem; font-weight:600; color:{color};'>{alert['Name']}</div>
-                    <div style='font-size:0.75rem; color:#6B7280;'>{msg}</div>
+                    <div style='font-size:0.75rem; color:#6B7280;'>{alert['SKU']} · {day_text}</div>
                 </div>
                 """, unsafe_allow_html=True)
-    
-    # ❌ [已移除] 連線診斷區塊
+
+    # 🔧 連線診斷已移除
 
     menu_options = [
-        "Dashboard", 
-        "Inbound", 
-        "Outbound", 
-        "Data Management",
-        "Logs",
-        "Warranty"
+        "總覽與查詢", 
+        "入庫作業", 
+        "出庫作業", 
+        "資料維護",
+        "異動紀錄",
+        "保固管理"
     ]
     
-    # 使用英文選單以符合 SaaS 風格，或可自行改回中文
-    page = st.sidebar.radio("MENU", menu_options, label_visibility="collapsed")
+    page = st.sidebar.radio("功能選單", menu_options, label_visibility="collapsed")
 
-    if page == "Dashboard": page_search()
-    elif page == "Inbound": page_operation("入庫")
-    elif page == "Outbound": page_operation("出庫")
-    elif page == "Data Management": page_maintenance()
-    elif page == "Logs": page_reports()
-    elif page == "Warranty": page_warranty_management()
+    if page == "總覽與查詢": page_search()
+    elif page == "入庫作業": page_operation("入庫")
+    elif page == "出庫作業": page_operation("出庫")
+    elif page == "資料維護": page_maintenance()
+    elif page == "異動紀錄": page_reports()
+    elif page == "保固管理": page_warranty_management()
+
+def render_saas_card(row):
+    """渲染專業 SaaS 風格卡片"""
+    img_url = row.get('ImageFile', '')
+    has_img = img_url and str(img_url).startswith("http")
+    
+    if has_img:
+        img_html = f'<img src="{img_url}" class="saas-thumb">'
+    else:
+        img_html = '<div class="saas-thumb-placeholder">📦</div>'
+    
+    try: stock = int(row['Stock'])
+    except: stock = 0
+    
+    # 狀態標籤
+    status_html = ""
+    if stock == 0:
+        status_html += '<span class="status-badge badge-danger">缺貨</span>'
+    elif stock <= 5:
+        status_html += '<span class="status-badge badge-warning">低庫存</span>'
+        
+    warranty_status, _ = check_warranty_status(row.get('WarrantyEnd'))
+    if warranty_status == "已過期":
+        status_html += ' <span class="status-badge badge-danger">過保</span>'
+    
+    if not status_html:
+        status_html = '<span class="status-badge badge-success">正常</span>'
+
+    html = f"""<div class="saas-card">
+{img_html}
+<div class="saas-content">
+<div class="col-main">
+    <div class="item-title">{row['Name']}</div>
+    <div class="item-sku">{row['SKU']}</div>
+</div>
+<div class="col-meta">
+    <div class="meta-row"><span>📁</span> {row['Category']}</div>
+    <div class="meta-row"><span>📍</span> {row['Location'] if row['Location'] else '-'}</div>
+</div>
+<div class="col-stock">
+    <div class="stock-number">{stock}</div>
+    <div style="margin-top:4px;">{status_html}</div>
+</div>
+</div>
+</div>"""
+    st.markdown(html, unsafe_allow_html=True)
 
 def page_search():
-    st.title("Dashboard")
+    st.title("總覽 Overview")
     df = load_data()
     
-    # 頂部狀態列
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Items", len(df))
-    c2.metric("Low Stock", len(df[df['Stock'] <= 5]))
-    c3.metric("Out of Stock", len(df[df['Stock'] == 0]))
-    
+    c1.metric("總品項", len(df))
+    c2.metric("低庫存", len(df[df['Stock'] <= 5]))
+    c3.metric("無庫存", len(df[df['Stock'] == 0]))
     warranty_alerts = get_warranty_alerts(df)
-    c4.metric("Alerts", len(warranty_alerts))
+    c4.metric("保固注意", len(warranty_alerts))
     
     st.markdown("---")
     
-    # 搜尋與篩選
-    col_search, col_filter = st.columns([2, 1])
-    with col_search:
-        search_term = st.text_input("Search", placeholder="Search by Name, SKU, Location...", label_visibility="collapsed")
-    with col_filter:
-        filter_cat = st.multiselect("Filter Category", df['Category'].unique(), label_visibility="collapsed", placeholder="Category")
-
-    # 資料處理
+    with st.expander("🔍 篩選與搜尋", expanded=False):
+        fc1, fc2, fc3 = st.columns(3)
+        filter_category = fc1.multiselect("分類", options=df['Category'].unique().tolist())
+        filter_location = fc2.multiselect("地點", options=df['Location'].unique().tolist())
+        filter_stock = fc3.selectbox("庫存狀態", ["全部", "正常", "低庫存", "無庫存"])
+    
+    search_term = st.text_input("搜尋", placeholder="輸入名稱或 SKU...")
+    
     result = df.copy()
-    if filter_cat:
-        result = result[result['Category'].isin(filter_cat)]
+    if filter_category: result = result[result['Category'].isin(filter_category)]
+    if filter_location: result = result[result['Location'].isin(filter_location)]
+    if filter_stock == "低庫存": result = result[result['Stock'] <= 5]
+    elif filter_stock == "無庫存": result = result[result['Stock'] == 0]
+    
     if search_term:
         mask = result.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
         result = result[mask]
     
-    st.caption(f"Showing {len(result)} items")
+    st.caption(f"共 {len(result)} 筆項目")
     
-    if result.empty:
-        st.info("No items found.")
-    else:
-        for index, row in result.iterrows():
-            render_saas_card(row)
+    for index, row in result.iterrows():
+        render_saas_card(row)
+
+def page_warranty_management():
+    st.title("保固管理")
+    df = load_data()
+    alerts = get_warranty_alerts(df)
+    
+    if not alerts:
+        st.success("目前沒有保固到期的設備")
+        return
+
+    st.dataframe(pd.DataFrame(alerts), use_container_width=True)
 
 def page_operation(op_type):
-    st.title(f"{op_type} Operation")
-    st.caption("Scan barcode or enter SKU manually.")
-    
+    st.title(f"{op_type}作業")
     c1, c2 = st.columns([1, 3])
-    qty = c1.number_input("Quantity", min_value=1, value=1)
+    qty = c1.number_input("數量", min_value=1, value=1)
     
     if "scan_input" not in st.session_state: st.session_state.scan_input = ""
-    
     def on_scan():
         if st.session_state.scan_box:
             process_stock(st.session_state.scan_box, qty, op_type)
             st.session_state.scan_box = ""
-    
-    st.text_input("Barcode / SKU", key="scan_box", on_change=on_scan, placeholder="Focus here and scan...")
+    st.text_input("掃描或輸入 SKU", key="scan_box", on_change=on_scan)
 
 def process_stock(sku, qty, op_type):
     doc_ref = db.collection(COLLECTION_products).document(sku)
@@ -651,11 +628,10 @@ def process_stock(sku, qty, op_type):
         new_stock = current + qty if op_type == "入庫" else current - qty
         
         if new_stock < 0:
-            st.error(f"Insufficient stock! Current: {current}")
+            st.error(f"❌ 庫存不足!目前: {current}")
             return
         
         doc_ref.update({'stock': new_stock, 'updatedAt': firestore.SERVER_TIMESTAMP})
-        
         save_log({
             "Time": get_taiwan_time(),
             "User": "Admin",
@@ -665,62 +641,54 @@ def process_stock(sku, qty, op_type):
             "Quantity": qty,
             "Note": "Manual Ops"
         })
-        
         st.cache_data.clear()
-        st.toast(f"✅ Success! {sku} Stock: {new_stock}")
+        st.toast(f"✅ {op_type}成功: {sku}")
     else:
-        st.error(f"SKU not found: {sku}")
+        st.error(f"❌ SKU 不存在: {sku}")
 
 def page_maintenance():
-    st.title("Data Management")
-    tabs = st.tabs(["New Item", "Edit / Delete", "Update Image", "Import CSV", "Reset"])
+    st.title("資料維護")
+    tabs = st.tabs(["新增項目", "編輯表格 (可刪除)", "更換圖片", "匯入 CSV", "匯入圖片", "系統重置"])
     
     with tabs[0]:
-        with st.form("add_form", clear_on_submit=False):
-            st.subheader("Basic Info")
+        with st.form("add_form"):
             c1, c2 = st.columns(2)
             code = c1.text_input("Code")
             cat = c2.text_input("Category")
             c3, c4 = st.columns(2)
             num = c3.text_input("Number")
             name = c4.text_input("Name")
-            
-            st.subheader("Details")
             c5, c6 = st.columns(2)
             sn = c5.text_input("S/N")
             loc = c6.text_input("Location")
             
-            c7, c8 = st.columns(2)
-            w_start = c7.date_input("Warranty Start", value=None)
-            w_end = c8.date_input("Warranty End", value=None)
-
-            stock = st.number_input("Initial Stock", 0, value=1)
-            submitted = st.form_submit_button("Create Item", type="primary")
-
-        if submitted:
-            if code and name:
+            enable_w = st.checkbox("啟用保固")
+            if enable_w:
+                w1, w2 = st.columns(2)
+                ws = w1.date_input("開始")
+                we = w2.date_input("結束")
+            else: ws, we = None, None
+            
+            stock = st.number_input("Stock", 0, value=1)
+            if st.form_submit_button("新增"):
                 sku = f"{code}-{cat}-{num}"
                 save_data_row({
                     "SKU":sku, "Code":code, "Category":cat, "Number":num, 
                     "Name":name, "SN":sn, "Location":loc, "Stock":stock,
-                    "WarrantyStart": w_start, "WarrantyEnd": w_end
+                    "WarrantyStart": ws, "WarrantyEnd": we
                 })
-                st.success(f"Item created: {sku}")
-            else:
-                st.error("Code and Name are required.")
+                st.success(f"已新增: {sku}")
 
-    # --- 關鍵修正：整合刪除邏輯的編輯表格 ---
     with tabs[1]:
-        st.caption("💡 Select rows and press Delete key to remove items.")
+        st.info("💡 提示：選取列後按 Delete 鍵可標記刪除，最後按按鈕同步。")
         df = load_data()
-        
         original_skus = set(df["SKU"].astype(str).tolist()) if not df.empty else set()
 
         col_config = {
             "SKU": st.column_config.TextColumn("SKU", disabled=True),
-            "WarrantyStart": st.column_config.DateColumn("Start Date"),
-            "WarrantyEnd": st.column_config.DateColumn("End Date"),
-            "ImageFile": st.column_config.ImageColumn("Image"),
+            "WarrantyStart": st.column_config.DateColumn("保固開始"),
+            "WarrantyEnd": st.column_config.DateColumn("保固結束"),
+            "ImageFile": st.column_config.ImageColumn("圖片"),
         }
         
         edited = st.data_editor(
@@ -731,8 +699,8 @@ def page_maintenance():
             column_config=col_config
         )
         
-        if st.button("Save Changes", type="primary"):
-            with st.spinner("Syncing..."):
+        if st.button("儲存變更 (包含刪除)", type="primary"):
+            with st.spinner("同步中..."):
                 current_skus = set(edited["SKU"].astype(str).tolist()) if not edited.empty else set()
                 deleted_skus = original_skus - current_skus
                 
@@ -748,7 +716,7 @@ def page_maintenance():
                         save_data_row(row)
                         upd_count += 1
                         
-            st.success(f"Synced! Updated: {upd_count}, Deleted: {del_count}")
+            st.success(f"✅ 完成！更新 {upd_count} 筆，刪除 {del_count} 筆。")
             time.sleep(1)
             st.cache_data.clear()
             st.rerun()
@@ -756,78 +724,42 @@ def page_maintenance():
     with tabs[2]:
         df_cur = load_data()
         if not df_cur.empty:
-            sel = st.selectbox("Select Item", df_cur['SKU'].unique())
-            if sel:
-                row = df_cur[df_cur['SKU'] == sel].iloc[0]
-                st.write(f"Editing: **{row['Name']}**")
-                f = st.file_uploader("Upload New Image", type=["jpg","png"])
-                if f and st.button("Update Image"):
-                    url = upload_image_to_firebase(f, sel)
-                    if url:
-                        db.collection(COLLECTION_products).document(sel).update({"imageFile": url})
-                        st.success("Image updated.")
-        else:
-            st.info("No items.")
+            sel = st.selectbox("選擇商品", df_cur['SKU'].unique())
+            f = st.file_uploader("上傳新圖片", type=["jpg","png"])
+            if f and st.button("更新圖片"):
+                url = upload_image_to_firebase(f, sel)
+                if url:
+                    db.collection(COLLECTION_products).document(sel).update({"imageFile": url})
+                    st.success("圖片已更新")
 
     with tabs[3]:
-        up_csv = st.file_uploader("Upload CSV", type=["csv"])
+        up_csv = st.file_uploader("CSV", type=["csv"])
         if up_csv:
-            if st.button("Import"):
-                # CSV 匯入邏輯 (簡化版)
-                try:
-                    df_im = pd.read_csv(up_csv)
-                    st.success("CSV Imported (Logic Placeholder)")
-                except:
-                    st.error("Error reading CSV")
+            df_im = pd.read_csv(up_csv) # 簡化版讀取，建議自行處理編碼
+            if st.button("匯入 CSV"):
+                for i, r in df_im.iterrows():
+                    save_data_row(r)
+                st.success("匯入完成")
 
     with tabs[4]:
-        st.error("Danger Zone")
-        confirm = st.text_input("Type 'DELETE' to confirm", key="delete_confirm")
-        if st.button("Delete All Data"):
-            if confirm == "DELETE":
-                with st.spinner("Deleting..."): c = delete_all_products_logic()
-                st.success(f"Deleted {c} items.")
-                time.sleep(1)
-                st.rerun()
+        st.write("批次圖片上傳 (檔名需為 SKU)")
+        imgs = st.file_uploader("選擇圖片", accept_multiple_files=True)
+        if imgs and st.button("上傳"):
+            bar = st.progress(0)
+            for i, f in enumerate(imgs):
+                sku = f.name.rsplit('.', 1)[0]
+                upload_image_to_firebase(f, sku)
+                bar.progress((i+1)/len(imgs))
+            st.success("完成")
+
+    with tabs[5]:
+        if st.button("清空資料庫"):
+            delete_all_products_logic()
+            st.rerun()
 
 def page_reports():
-    st.title("Activity Logs")
-    df = load_log()
-    st.dataframe(df, use_container_width=True)
-
-def page_warranty_management():
-    st.title("Warranty Management")
-    df = load_data()
-    warranty_alerts = get_warranty_alerts(df)
-    
-    if not warranty_alerts:
-        st.success("No warranty alerts.")
-        return
-
-    for alert in warranty_alerts:
-        days = alert['DaysLeft']
-        color = "#DC2626" if days < 0 else "#D97706"
-        badge = "Expired" if days < 0 else "Expiring Soon"
-        
-        st.markdown(f"""
-        <div class="saas-card">
-            <div class="card-body">
-                <div class="card-header-row">
-                    <span class="item-title-text" style="color:{color}">{alert['Name']}</span>
-                    <span class="saas-badge badge-red">{badge}</span>
-                </div>
-                <div class="meta-row">
-                    <span>SKU: {alert['SKU']}</span>
-                    <span>•</span>
-                    <span>Ends: {alert['WarrantyEnd'].strftime('%Y-%m-%d')}</span>
-                </div>
-            </div>
-            <div class="stock-indicator">
-                <div class="stock-value" style="color:{color}">{days}</div>
-                <div class="stock-caption">Days</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.title("異動紀錄")
+    st.dataframe(load_log(), use_container_width=True)
 
 if __name__ == "__main__":
     main()
