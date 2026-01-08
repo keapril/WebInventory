@@ -518,7 +518,7 @@ def main():
     elif page == "保固管理": page_warranty_management()  # 🆕
 
 def render_nordic_card(row):
-    """渲染北歐精緻風卡片 (HTML 結構修復版)"""
+    """渲染北歐精緻風卡片 (修正縮排問題版)"""
     # 1. 圖片處理
     img_url = row.get('ImageFile', '')
     has_img = img_url and str(img_url).startswith("http")
@@ -549,7 +549,7 @@ def render_nordic_card(row):
     elif warranty_status == "即將到期":
         badges.append('<span class="status-badge bg-yellow">保固注意</span>')
     
-    badges_html = " ".join(badges) # 使用空格連接標籤
+    badges_html = " ".join(badges)
     
     # 3. 欄位處理
     loc = row['Location'] if row['Location'] else "未設定"
@@ -558,37 +558,32 @@ def render_nordic_card(row):
     category = row['Category']
     name = row['Name']
 
-    # 4. 組裝 HTML (注意：f-string 內不要隨意換行，以免破壞結構)
-    html = f"""
-    <div class="nordic-card">
-        <div class="card-img-box">
-            {img_html}
-        </div>
-        
-        <div class="card-content">
-            <div class="card-title">
-                {name}
-                {badges_html}
-            </div>
-            
-            <div class="card-meta-row">
-                <span class="sku-tag">{sku}</span>
-                <span class="category-text">{category}</span>
-            </div>
-            
-            <div class="info-text">
-                <span>📍 {loc}</span>
-                <span style="color:#EEE">|</span>
-                <span># {sn}</span>
-            </div>
-        </div>
-        
-        <div class="stock-box">
-            <div class="stock-num">{stock}</div>
-            <div class="stock-label">STOCK</div>
-        </div>
-    </div>
-    """
+    # 4. 組裝 HTML 
+    # ⚠️ 關鍵修正：這裡的 HTML 內容必須「完全靠左」，不能有縮排！
+    html = f"""<div class="nordic-card">
+<div class="card-img-box">
+{img_html}
+</div>
+<div class="card-content">
+<div class="card-title">
+{name}
+{badges_html}
+</div>
+<div class="card-meta-row">
+<span class="sku-tag">{sku}</span>
+<span class="category-text">{category}</span>
+</div>
+<div class="info-text">
+<span>📍 {loc}</span>
+<span style="color:#EEE">|</span>
+<span># {sn}</span>
+</div>
+</div>
+<div class="stock-box">
+<div class="stock-num">{stock}</div>
+<div class="stock-label">STOCK</div>
+</div>
+</div>"""
     
     st.markdown(html, unsafe_allow_html=True)
 
