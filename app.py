@@ -78,201 +78,162 @@ except Exception as e:
 COLLECTION_products = "instrument_consumables" 
 COLLECTION_logs = "consumables_logs"
 
-# --- 3. UI 設計：北歐極簡風 (Nordic UI) ---
+# --- 3. UI 設計：北歐精緻風 (Nordic Exquisite) ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+    /* 引入 Playfair Display (標題用) 與 Lato (內文用) */
+    @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500&display=swap');
 
     :root {
-        --bg-color: #F9FAFB;        /* 極淡灰背景，減少眼睛疲勞 */
-        --card-bg: #FFFFFF;         /* 純白卡片 */
-        --text-main: #1F2937;       /* 深灰主字體，非純黑 */
-        --text-sub: #6B7280;        /* 淺灰次要字體 */
-        --accent: #3B82F6;          /* 科技藍 (用於強調) */
-        --border-radius: 16px;      /* 大圓角 */
-        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        --font-base: 'Inter', 'Noto Sans TC', sans-serif;
+        --bg-color: #FAFAFA;        /* 更乾淨的米白灰 */
+        --card-bg: #FFFFFF;
+        --text-primary: #2C2C2C;    /* 接近黑色的深灰，比純黑柔和 */
+        --text-secondary: #888888;  /* 淺灰 */
+        --accent: #000000;          /* 極簡黑作為強調色 */
+        --font-heading: 'Playfair Display', serif;  /* ✨ 精緻感的關鍵：襯線字體 */
+        --font-body: 'Lato', 'Noto Sans TC', sans-serif;
+        --shadow: 0 2px 10px rgba(0,0,0,0.03);      /* 極輕柔的陰影 */
     }
 
-    /* 全站基礎設定 */
     .stApp {
         background-color: var(--bg-color);
-        color: var(--text-main);
-        font-family: var(--font-base);
-    }
-    
-    /* 側邊欄優化 */
-    section[data-testid="stSidebar"] {
-        background-color: #FFFFFF;
-        border-right: 1px solid #E5E7EB;
-    }
-    .sidebar-brand {
-        font-family: var(--font-base);
-        font-size: 1.1rem;
-        font-weight: 700;
-        color: var(--text-main);
-        padding: 10px 0;
-        letter-spacing: 0.5px;
+        font-family: var(--font-body);
+        color: var(--text-primary);
     }
 
     /* 標題優化 */
     h1, h2, h3 {
-        font-family: var(--font-base) !important;
+        font-family: var(--font-heading) !important;
         font-weight: 600 !important;
-        color: var(--text-main) !important;
-        letter-spacing: -0.025em;
-    }
-    
-    /* 修正：讓 Header (漢堡選單) 回歸，但背景透明化 */
-    header[data-testid="stHeader"] {
-        background-color: transparent;
+        color: #111 !important;
+        letter-spacing: 0.5px;
     }
 
-    /* 卡片設計 (Nordic Card) */
+    /* 卡片本體 */
     .nordic-card {
         background: var(--card-bg);
-        border-radius: var(--border-radius);
-        padding: 24px;
+        border: 1px solid #EAEAEA;
+        border-radius: 12px;        /* 圓角 */
+        padding: 20px;
         margin-bottom: 16px;
-        box-shadow: var(--shadow-sm);
-        border: 1px solid #F3F4F6;
-        transition: all 0.2s ease;
+        box-shadow: var(--shadow);
         display: flex;
         align-items: center;
-        gap: 20px;
+        gap: 24px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .nordic-card:hover {
         transform: translateY(-2px);
-        box-shadow: var(--shadow-md);
-        border-color: #E5E7EB;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+        border-color: #DDD;
     }
-    
-    /* 圖片樣式 */
+
+    /* 圖片區 */
     .card-img-box {
-        width: 72px;
-        height: 72px;
-        border-radius: 12px;
+        width: 80px;
+        height: 80px;
+        border-radius: 8px;
         overflow: hidden;
-        background-color: #F3F4F6;
+        background-color: #F7F7F7;
         flex-shrink: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        border: 1px solid #F0F0F0;
     }
     .card-img {
         width: 100%;
         height: 100%;
         object-fit: cover;
     }
-    
-    /* 內容排版 */
+
+    /* 文字內容區 */
     .card-content {
         flex-grow: 1;
     }
     .card-title {
-        font-size: 1rem;
+        font-family: var(--font-body); /* 中文標題還是用黑體比較易讀 */
+        font-size: 1.05rem;
         font-weight: 600;
-        color: var(--text-main);
-        margin-bottom: 4px;
+        color: #111;
+        margin-bottom: 6px;
         display: flex;
         align-items: center;
-        gap: 8px;
-    }
-    .card-meta {
-        font-size: 0.85rem;
-        color: var(--text-sub);
-        font-weight: 400;
+        gap: 10px;
+        letter-spacing: 0.02em;
     }
     
-    /* 標籤 (Pill Badges) */
-    .status-pill {
-        display: inline-flex;
+    /* SKU 與 分類 */
+    .card-meta-row {
+        display: flex;
+        gap: 12px;
         align-items: center;
-        padding: 2px 10px;
-        border-radius: 99px;
-        font-size: 0.75rem;
-        font-weight: 500;
-        white-space: nowrap;
+        margin-bottom: 6px;
     }
-    .pill-gray { background: #F3F4F6; color: #4B5563; }
-    .pill-red { background: #FEF2F2; color: #DC2626; }
-    .pill-yellow { background: #FFFBEB; color: #D97706; }
-    .pill-blue { background: #EFF6FF; color: #2563EB; }
+    .sku-tag {
+        font-family: 'Lato', sans-serif;
+        font-size: 0.75rem;
+        color: #666;
+        background: #F3F4F6;
+        padding: 2px 8px;
+        border-radius: 4px;
+        letter-spacing: 0.5px;
+    }
+    .category-text {
+        font-size: 0.8rem;
+        color: #888;
+        font-weight: 300;
+    }
 
-    /* 庫存數字 */
+    /* 地點與序號 */
+    .info-text {
+        font-size: 0.8rem;
+        color: #999;
+        font-weight: 300;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* 庫存區塊 (重點設計) */
     .stock-box {
         text-align: right;
-        min-width: 60px;
+        min-width: 80px;
+        border-left: 1px solid #F0F0F0;
+        padding-left: 20px;
     }
     .stock-num {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: var(--text-main);
+        font-family: var(--font-heading); /* ✨ 數字用襯線字體，質感大增 */
+        font-size: 2rem;
+        font-weight: 500;
+        color: #111;
         line-height: 1;
     }
     .stock-label {
-        font-size: 0.75rem;
-        color: var(--text-sub);
-        margin-top: 4px;
+        font-family: 'Lato', sans-serif;
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 2px; /* 字距拉開，增加高級感 */
+        color: #AAA;
+        margin-top: 6px;
     }
 
-    /* 輸入框美化 */
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        border-radius: 12px;
-        border: 1px solid #E5E7EB;
-        background-color: #FFFFFF;
-        padding: 10px 14px;
-        color: var(--text-main);
-    }
-    .stTextInput input:focus {
-        border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-    }
-    
-    /* 按鈕美化 */
-    div.stButton > button {
-        border-radius: 12px;
-        border: 1px solid #E5E7EB;
-        background-color: #FFFFFF;
-        color: var(--text-main);
+    /* 狀態標籤 */
+    .status-badge {
+        font-size: 0.7rem;
+        padding: 3px 8px;
+        border-radius: 100px;
         font-weight: 500;
-        padding: 0.5rem 1.2rem;
-        box-shadow: var(--shadow-sm);
-        transition: all 0.2s;
     }
-    div.stButton > button:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-        background-color: #EFF6FF;
-    }
-    div.stButton > button[kind="primary"] {
-        background-color: var(--text-main);
-        color: white;
-        border: none;
-    }
-
-    /* Metrics 優化 */
-    div[data-testid="stMetric"] {
-        background-color: #FFFFFF;
-        padding: 16px;
-        border-radius: 16px;
-        border: 1px solid #F3F4F6;
-        box-shadow: var(--shadow-sm);
-    }
-    div[data-testid="stMetricLabel"] {
-        color: var(--text-sub) !important;
-        font-size: 0.85rem !important;
+    .bg-red { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+    .bg-yellow { background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; }
+    
+    /* 讓 Streamlit 元件變美 */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        border-radius: 8px !important;
+        border: 1px solid #E5E5E5 !important;
+        background-color: #FFF !important;
+        color: #333 !important;
     }
     div[data-testid="stMetricValue"] {
-        color: var(--text-main) !important;
-        font-size: 1.6rem !important;
-    }
-    
-    /* 去除頂部與底部多餘間距 */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 3rem;
+        font-family: var(--font-heading) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -557,69 +518,78 @@ def main():
     elif page == "保固管理": page_warranty_management()  # 🆕
 
 def render_nordic_card(row):
-    """渲染北歐風卡片"""
+    """渲染北歐精緻風卡片 (HTML 結構修復版)"""
+    # 1. 圖片處理
     img_url = row.get('ImageFile', '')
     has_img = img_url and str(img_url).startswith("http")
     
-    # 圖片區塊
     if has_img:
         img_html = f'<img src="{img_url}" class="card-img">'
     else:
-        # 無圖片時顯示簡約的 Placeholder
-        img_html = '<span style="color:#9CA3AF;font-size:0.8rem;">No Img</span>'
+        img_html = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#DDD;font-size:1.5rem;">❖</div>'
     
-    # 庫存與顏色邏輯
-    stock = int(row['Stock'])
-    stock_class = "pill-gray"
-    if stock == 0: stock_class = "pill-red"
-    elif stock <= 5: stock_class = "pill-yellow"
-    
-    # 標籤生成
+    # 2. 庫存邏輯
+    try:
+        stock = int(row['Stock'])
+    except:
+        stock = 0
+        
     badges = []
     
-    # 庫存標籤 (只在低庫存顯示文字，保持版面乾淨)
-    stock_level = get_stock_alert_level(stock)
-    if stock_level in ["無庫存", "極低", "偏低"]:
-        badges.append(f'<span class="status-pill {stock_class}">{stock_level}</span>')
-    
-    # 保固標籤
+    # 庫存警示
+    if stock == 0:
+        badges.append('<span class="status-badge bg-red">無庫存</span>')
+    elif stock <= 5:
+        badges.append('<span class="status-badge bg-yellow">低庫存</span>')
+        
+    # 保固警示
     warranty_status, _ = check_warranty_status(row.get('WarrantyEnd'))
     if warranty_status == "已過期":
-        badges.append('<span class="status-pill pill-red">保固過期</span>')
+        badges.append('<span class="status-badge bg-red">保固過期</span>')
     elif warranty_status == "即將到期":
-        badges.append('<span class="status-pill pill-yellow">保固注意</span>')
-        
-    badges_html = "".join(badges)
+        badges.append('<span class="status-badge bg-yellow">保固注意</span>')
     
-    # 處理空值顯示
+    badges_html = " ".join(badges) # 使用空格連接標籤
+    
+    # 3. 欄位處理
     loc = row['Location'] if row['Location'] else "未設定"
     sn = row['SN'] if row['SN'] else "-"
-    
+    sku = row['SKU']
+    category = row['Category']
+    name = row['Name']
+
+    # 4. 組裝 HTML (注意：f-string 內不要隨意換行，以免破壞結構)
     html = f"""
     <div class="nordic-card">
         <div class="card-img-box">
             {img_html}
         </div>
+        
         <div class="card-content">
             <div class="card-title">
-                {row['Name']} 
+                {name}
                 {badges_html}
             </div>
-            <div class="card-meta">
-                <span class="status-pill pill-gray" style="margin-right:8px;">{row['SKU']}</span>
-                <span>{row['Category']}</span>
+            
+            <div class="card-meta-row">
+                <span class="sku-tag">{sku}</span>
+                <span class="category-text">{category}</span>
             </div>
-            <div class="card-meta" style="margin-top:6px;">
-                <span style="color:#9CA3AF;">📍</span> {loc} &nbsp;&nbsp; 
-                <span style="color:#9CA3AF;">#</span> {sn}
+            
+            <div class="info-text">
+                <span>📍 {loc}</span>
+                <span style="color:#EEE">|</span>
+                <span># {sn}</span>
             </div>
         </div>
+        
         <div class="stock-box">
             <div class="stock-num">{stock}</div>
-            <div class="stock-label">Stock</div>
+            <div class="stock-label">STOCK</div>
         </div>
     </div>
     """
+    
     st.markdown(html, unsafe_allow_html=True)
 
 def page_search():
