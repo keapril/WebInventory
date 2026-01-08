@@ -1,3 +1,8 @@
+# --- 在 app.py 最上方新增 import ---
+import boto3
+from botocore.exceptions import NoCredentialsError
+from io import BytesIO  # 用於圖片壓縮
+
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
@@ -486,19 +491,68 @@ def delete_all_products_logic():
     st.cache_data.clear()
     return count
 
+# --- 替換原本的 upload_image_to_firebase 函式 ---
 def upload_image_to_firebase(uploaded_file, sku, bucket_override=None):
+    """
+    雖然函式名稱沒改(為了相容舊程式碼)，但現在實際是上傳到 Cloudflare R2
+    """
     if uploaded_file is None: return None
+    
+    # 讀取 Secrets
     try:
-        target_bucket = bucket_override if bucket_override else bucket
+        r2_conf = st.secrets["cloudflare"]
+        endpoint = r2_conf["endpoint"]
+        access_key = r2_conf["access_key"]
+        secret_key = r2_conf["secret_key"]
+        bucket_name = r2_conf["bucket_name"]
+        public_domain = r2_conf["public_domain"]
+    except KeyError:
+        st.error("❌ 找不到 Cloudflare 設定，請檢查 secrets.toml")
+        return None
+
+    try:
+        # 1. 圖片壓縮處理 (強烈建議保留，節省頻寬與優化速度)
+        image = Image.open(uploaded_file)
+        if image.mode in ("RGBA", "P"): image = image.convert("RGB")
+        
+        # 限制最大寬度 800px
+        max_width = 800
+        if image.width > max_width:
+            ratio = max_width / float(image.width)
+            new_height = int(float(image.height) * ratio)
+            image = image.resize((max_width, new_height), Image.Resampling.LANCZOS)
+            
+        img_byte_arr = BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=80)
+        img_byte_arr.seek(0)
+
+        # 2. 建立 R2 (S3) 連線
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key
+        )
+
+        # 3. 定義檔名 (SKU + 時間戳 + .jpg)
         safe_sku = "".join([c for c in sku if c.isalnum() or c in ('-','_')])
-        file_ext = uploaded_file.name.split('.')[-1]
-        blob_name = f"images/{safe_sku}-{int(time.time())}.{file_ext}"
-        blob = target_bucket.blob(blob_name)
-        blob.upload_from_file(uploaded_file, content_type=uploaded_file.type)
-        blob.make_public()
-        return blob.public_url
+        file_name = f"images/{safe_sku}-{int(time.time())}.jpg"
+
+        # 4. 執行上傳
+        s3_client.upload_fileobj(
+            img_byte_arr,
+            bucket_name,
+            file_name,
+            ExtraArgs={'ContentType': 'image/jpeg'}
+        )
+
+        # 5. 回傳公開連結
+        # 格式: https://pub-xxx.r2.dev/images/sku-123.jpg
+        # 注意: R2 網址結尾若有斜線要處理一下，這裡假設 public_domain 沒有結尾斜線
+        return f"{public_domain}/{file_name}"
+
     except Exception as e:
-        st.error(f"上傳失敗: {e}")
+        st.error(f"R2 上傳失敗: {e}")
         return None
 
 def check_warranty_status(warranty_end):
