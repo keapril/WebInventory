@@ -9,6 +9,6 @@
     "platform": "Streamlit-Bridge",
     "target_url": "https://webfce.streamlit.app/",
     "engine_provider": "Vercel",
-    "version": "2.7.0-QuantumSync"
+    "version": "2.7.1-BuildFix"
   }
 }
