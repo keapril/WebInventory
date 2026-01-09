@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -12,9 +11,10 @@ import {
   Package, Inbox, Send, Wrench, History, 
   Search, Box, Info, Trash2, 
   AlertTriangle, MapPin, Tag, Sparkles, 
-  Plus, Edit, Image as ImageIcon, RotateCcw, Save, X, Layers, Upload, Camera, ExternalLink, Github, Globe, Hash, Calendar, ListPlus, Calculator, Loader2, Cloud, RefreshCw
+  Plus, Edit, Image as ImageIcon, RotateCcw, Save, X, Layers, Upload, Camera, ExternalLink, Github, Globe, Hash, Calendar, ListPlus, Calculator, Loader2, Cloud, RefreshCw, Bot, SendHorizonal, MessageCircle
 } from 'lucide-react';
 import { HeroScene } from './components/QuantumScene';
+import { GoogleGenAI } from "@google/genai";
 
 // --- SYSTEM CONFIGURATION ---
 const SYSTEM_CONFIG = {
@@ -22,7 +22,7 @@ const SYSTEM_CONFIG = {
   IMAGE_DB_PATH: "pub-12069eb186dd414482e689701534d8d5.r2.dev",
   GITHUB_URL: "https://github.com/keapril/WebInventory",
   OFFICIAL_URL: "https://webfce.streamlit.app/",
-  VERSION: "2.7.0-QuantumSync"
+  VERSION: "2.8.0-AI-Integrated"
 };
 
 // Helper to resolve image URLs
@@ -32,11 +32,144 @@ const resolveImageUrl = (path: string) => {
   return `https://${SYSTEM_CONFIG.IMAGE_DB_PATH}/${path}`;
 };
 
-// --- UTILS ---
 const getCurrentTimestamp = () => new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }).replace(/\//g, '-');
 
-// --- COMPONENTS ---
+// --- AI CHAT COMPONENT ---
+const AIChat: React.FC<{ products: Product[] }> = ({ products }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, isTyping]);
+
+  const handleAskAI = async () => {
+    if (!input.trim() || isTyping) return;
+    
+    const userMsg = input;
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setIsTyping(true);
+
+    try {
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) {
+        setTimeout(() => {
+          setMessages(prev => [...prev, { role: 'ai', text: "哎呀！偵測不到 GEMINI_API_KEY。請在 Vercel 設定中加入金鑰，我才能幫您分析數據。目前我暫時無法回答您的問題喔！" }]);
+          setIsTyping(false);
+        }, 1000);
+        return;
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      const context = JSON.stringify(products.map(p => ({ SKU: p.SKU, Name: p.Name, Stock: p.Stock, Location: p.Location })));
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: userMsg,
+        config: {
+          systemInstruction: `妳是一位專業的庫存管理助手。以下是目前的即時庫存數據：${context}。請根據這些數據回答使用者的問題。如果數據中找不到，請委婉告知。請使用繁體中文回答，語氣親切專業。`,
+          temperature: 0.7,
+        }
+      });
+
+      setMessages(prev => [...prev, { role: 'ai', text: response.text || "抱歉，我現在有點混亂，請再問一次。" }]);
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, { role: 'ai', text: "連線 AI 服務時發生錯誤，請檢查您的 API 金鑰是否正確。" }]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  return (
+    <div className="fixed bottom-8 right-8 z-50">
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="mb-4 w-80 md:w-96 glass border border-gold/20 rounded-[2rem] shadow-2xl overflow-hidden flex flex-col"
+            style={{ height: '500px' }}
+          >
+            <div className="p-4 bg-primary text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bot size={20} />
+                <span className="font-bold text-sm tracking-wide">AI 智慧助手</span>
+              </div>
+              <button onClick={() => setIsOpen(false)}><X size={20}/></button>
+            </div>
+            
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-stone-50/30">
+              {messages.length === 0 && (
+                <div className="text-center py-10 px-6">
+                  <Bot size={40} className="mx-auto text-primary/30 mb-3" />
+                  <p className="text-stone-400 text-xs font-serif italic">我是您的量子庫存助手，您可以問我有關庫存的任何問題！</p>
+                </div>
+              )}
+              {messages.map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-xs font-medium shadow-sm ${
+                    m.role === 'user' ? 'bg-primary text-white' : 'bg-white border border-gold/10 text-stone-700'
+                  }`}>
+                    {m.text}
+                  </div>
+                </div>
+              ))}
+              {isTyping && (
+                <div className="flex justify-start">
+                   <div className="bg-white border border-gold/10 px-4 py-2 rounded-2xl flex items-center gap-1">
+                      <div className="w-1 h-1 bg-primary rounded-full animate-bounce"></div>
+                      <div className="w-1 h-1 bg-primary rounded-full animate-bounce delay-75"></div>
+                      <div className="w-1 h-1 bg-primary rounded-full animate-bounce delay-150"></div>
+                   </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gold/10 bg-white">
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAskAI()}
+                  placeholder="詢問庫存狀況..." 
+                  className="flex-1 bg-stone-100 border-none rounded-xl px-4 py-2 text-xs focus:ring-1 focus:ring-primary"
+                />
+                <button 
+                  onClick={handleAskAI}
+                  className="p-2 bg-primary text-white rounded-xl hover:bg-gold-dark transition-colors shadow-lg shadow-primary/20"
+                >
+                  <SendHorizonal size={18} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-14 h-14 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center relative group overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+        <Bot size={28} className="relative z-10" />
+        {!isOpen && (
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full border-2 border-white animate-pulse"></span>
+        )}
+      </motion.button>
+    </div>
+  );
+};
+
+// --- SIDEBAR COMPONENT ---
 const Sidebar: React.FC<{ currentPage: Page; setPage: (page: Page) => void; isSyncing: boolean }> = ({ currentPage, setPage, isSyncing }) => {
     const menuItems: { id: Page; name: string; icon: React.ReactNode }[] = [
         { id: 'overview', name: '總覽查詢', icon: <Package size={18}/> },
@@ -81,6 +214,7 @@ const Sidebar: React.FC<{ currentPage: Page; setPage: (page: Page) => void; isSy
                       {isSyncing && <RefreshCw size={10} className="text-primary animate-spin" />}
                    </div>
                 </div>
+                <div className="text-[9px] text-stone-400 font-bold text-center">v{SYSTEM_CONFIG.VERSION}</div>
             </div>
         </aside>
     );
@@ -96,12 +230,10 @@ const LabelInput: React.FC<{ label: string; icon: React.ReactNode; children: Rea
 );
 
 // --- MAINTENANCE PAGE ---
-
 const MaintenancePage: React.FC<{
   onSave: (p: Product) => Promise<void>,
   editingProduct: Product | null,
   clearEditing: () => void,
-  // FIX: Added setEditingProduct to props to fix "Cannot find name 'setEditingProduct'" error in the component body
   setEditingProduct: (p: Product) => void,
   productsList: Product[],
   isSaving: boolean
@@ -347,7 +479,6 @@ const MaintenancePage: React.FC<{
 }
 
 // --- APP CORE ---
-
 const App: React.FC = () => {
     const [page, setPage] = useState<Page>('overview');
     const [products, setProducts] = useState<Product[]>([]);
@@ -356,7 +487,6 @@ const App: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-    // 1. Fetch data from Cloud (Firebase)
     const fetchCloudData = useCallback(async () => {
       setIsSyncing(true);
       try {
@@ -390,20 +520,17 @@ const App: React.FC = () => {
       fetchCloudData();
     }, [fetchCloudData]);
 
-    // 2. Save/Update to Cloud (Firebase)
     const saveToCloud = async (p: Product) => {
       setIsSaving(true);
       try {
         const sanitizedSKU = p.SKU.replace(/\//g, '_').replace(/\./g, '_');
         
-        // Save product
         await fetch(`${SYSTEM_CONFIG.FIREBASE_URL}/products/${sanitizedSKU}.json`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(p)
         });
         
-        // Log entry
         const log: LogEntry = {
           Time: getCurrentTimestamp(),
           User: 'Admin',
@@ -447,7 +574,6 @@ const App: React.FC = () => {
                             onSave={saveToCloud} 
                             editingProduct={editingProduct} 
                             clearEditing={() => setEditingProduct(null)}
-                            // FIX: Passing setEditingProduct to allow MaintenancePage to handle product selection for editing
                             setEditingProduct={setEditingProduct}
                             productsList={products}
                             isSaving={isSaving}
@@ -457,6 +583,7 @@ const App: React.FC = () => {
                     </motion.div>
                 </AnimatePresence>
             </main>
+            <AIChat products={products} />
         </div>
     );
 };
