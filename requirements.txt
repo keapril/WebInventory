@@ -1,6 +1,2 @@
-streamlit
-pandas
-firebase-admin
-Pillow
-boto3
-requests
+
+streamlit>=1.31.0
