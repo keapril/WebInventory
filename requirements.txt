@@ -1,0 +1,7 @@
+streamlit
+pandas
+firebase-admin
+Pillow
+requests
+boto3
+botocore
