@@ -532,6 +532,40 @@ def format_accessories_display(acc_str, max_items=3):
         result += f" 等 {len(acc_dict)} 項"
     return result
 
+# 處理圖片 URL（支援 Firebase Storage 舊圖片）
+@st.cache_data(ttl=3600)  # 快取 1 小時
+def get_displayable_image_url(img_url):
+    """處理圖片 URL，將 Firebase Storage URL 轉換為可存取的簽名 URL"""
+    if not img_url or not str(img_url).startswith("http"):
+        return None
+    
+    img_url = str(img_url)
+    
+    # 檢查是否為 Firebase Storage URL
+    if "storage.googleapis.com" in img_url or "firebasestorage.app" in img_url:
+        try:
+            # 從 URL 中提取 blob 路徑
+            # URL 格式: https://storage.googleapis.com/bucket-name/path/to/file
+            import urllib.parse
+            parsed = urllib.parse.urlparse(img_url)
+            path_parts = parsed.path.split('/', 2)  # ['', 'bucket-name', 'path/to/file']
+            if len(path_parts) >= 3:
+                blob_path = urllib.parse.unquote(path_parts[2])  # 解碼 URL 編碼的中文
+                blob = bucket.blob(blob_path)
+                # 產生 1 小時有效的簽名 URL
+                signed_url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(hours=1),
+                    method="GET"
+                )
+                return signed_url
+        except Exception as e:
+            # 如果產生簽名 URL 失敗，返回原始 URL
+            pass
+    
+    # Cloudflare R2 或其他 URL 直接返回
+    return img_url
+
 # --- 5. 主程式介面 ---
 
 def main():
@@ -574,8 +608,9 @@ def main():
 
 def render_item_card(row):
     """渲染項目卡片 - 日式簡約風格"""
-    img_url = row.get('ImageFile', '')
-    has_img = img_url and str(img_url).startswith("http")
+    raw_img_url = row.get('ImageFile', '')
+    img_url = get_displayable_image_url(raw_img_url)
+    has_img = img_url is not None
     item_type = row.get('ItemType', '儀器')
     
     if has_img:
