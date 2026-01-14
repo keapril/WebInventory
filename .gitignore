@@ -1,5 +1,0 @@
-.streamlit/secrets.toml
-__pycache__/
-*.pyc
-product-system-*.json
-*firebase*.json
